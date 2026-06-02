@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Meta-Harness Bot</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 20px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { color: #38bdf8; font-size: 24px; margin-bottom: 4px; }
+  .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+  .card { background: #1e293b; border-radius: 12px; padding: 24px; margin-bottom: 20px; border: 1px solid rgba(56,189,248,0.1); }
+  .card h2 { font-size: 16px; color: #38bdf8; margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 4px; }
+  input, textarea, select { width: 100%; padding: 10px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 14px; margin-bottom: 12px; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: #38bdf8; }
+  textarea { min-height: 60px; resize: vertical; }
+  .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .btn-primary { background: #0ea5e9; color: #0f172a; }
+  .btn-primary:hover { background: #38bdf8; }
+  .btn-danger { background: #ef4444; color: #fff; }
+  .btn-danger:hover { background: #f87171; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+  .btn-outline:hover { border-color: #38bdf8; color: #38bdf8; }
+  .row { display: flex; gap: 12px; align-items: end; }
+  .row > * { flex: 1; }
+  .session-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #0f172a; border-radius: 8px; margin-bottom: 8px; }
+  .session-item .title { font-weight: 600; }
+  .session-item .meta { font-size: 12px; color: #94a3b8; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-active { background: #064e3b; color: #6ee7b7; }
+  .badge-inactive { background: #334155; color: #94a3b8; }
+  .insight-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .insight-table th { text-align: left; padding: 8px 12px; background: #0f172a; color: #94a3b8; font-weight: 600; border-bottom: 1px solid #334155; }
+  .insight-table td { padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+  .insight-table tr:hover td { background: rgba(56,189,248,0.05); }
+  .msg { padding: 10px 14px; border-radius: 8px; margin: 12px 0; font-size: 13px; display: none; }
+  .msg-ok { background: #064e3b; color: #6ee7b7; display: block; }
+  .msg-err { background: #7f1d1d; color: #fca5a5; display: block; }
+  .loading { color: #94a3b8; font-size: 13px; }
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 20px; }
+  .tab { padding: 8px 16px; border-radius: 8px 8px 0 0; background: #1e293b; cursor: pointer; font-size: 13px; color: #94a3b8; border: 1px solid transparent; border-bottom: none; }
+  .tab.active { background: #1e293b; color: #38bdf8; border-color: #38bdf8; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Meta-Harness Admin</h1>
+  <p class="subtitle">Управление ботом MBA AlmaU Impact Forum</p>
+
+  <div id="msg" class="msg"></div>
+
+  <div class="tab-bar">
+    <div class="tab active" data-tab="push">📢 Push-опрос</div>
+    <div class="tab" data-tab="sessions">📋 Сессии</div>
+  </div>
+
+  <div id="tab-push" class="tab-content active">
+    <div class="card">
+      <h2>Отправить пуш-опрос</h2>
+      <div class="row">
+        <div><label>ID сессии</label><input id="push_session_id" value="session_3" placeholder="session_3"></div>
+        <div><label>Название сессии</label><input id="push_title" placeholder="Название доклада"></div>
+      </div>
+      <label>Вопрос</label>
+      <textarea id="push_question" placeholder="Какие главные поинты вы выделите?">Какие главные поинты вы выделите после этой встречи?</textarea>
+      <label>Пароль администратора</label>
+      <input id="push_password" type="password" placeholder="admin_password">
+      <button class="btn btn-primary" onclick="sendPushPoll()">📢 Отправить опрос</button>
+    </div>
+  </div>
+
+  <div id="tab-sessions" class="tab-content">
+    <div class="card">
+      <h2>Сессии и инсайты</h2>
+      <div class="row">
+        <div><label>Пароль администратора</label><input id="list_password" type="password" placeholder="admin_password"></div>
+        <div><button class="btn btn-primary" onclick="loadSessions()" style="margin-bottom:12px">Загрузить сессии</button></div>
+      </div>
+      <div id="sessions_list"></div>
+    </div>
+
+    <div class="card" id="insights_card" style="display:none">
+      <h2 id="insights_title">Инсайты</h2>
+      <div style="margin-bottom:12px; display:flex; gap:8px" id="insights_actions"></div>
+      <div id="insights_table"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/admin';
+
+function msg(text, ok) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'msg-ok' : 'msg-err');
+  setTimeout(() => el.className = 'msg', 5000);
+}
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab, .tab-content').forEach(el => el.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+async function sendPushPoll() {
+  const session_id = document.getElementById('push_session_id').value.trim();
+  const title = document.getElementById('push_title').value.trim();
+  const question = document.getElementById('push_question').value.trim();
+  const admin_password = document.getElementById('push_password').value.trim();
+  if (!session_id || !title || !admin_password) return msg('Заполните ID, название и пароль', false);
+  try {
+    const r = await fetch(API + '?action=push_poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'push_poll', session_id, title, question, admin_password })
+    });
+    const d = await r.json();
+    if (d.success) msg('✅ ' + d.message, true);
+    else msg('❌ ' + (d.error || 'Ошибка'), false);
+  } catch (e) { msg('❌ ' + e.message, false); }
+}
+
+async function loadSessions() {
+  const admin_password = document.getElementById('list_password').value.trim();
+  if (!admin_password) return msg('Введите пароль', false);
+  try {
+    const r = await fetch(API + '?action=list_sessions&admin_password=' + encodeURIComponent(admin_password));
+    const d = await r.json();
+    if (!d.success) return msg('❌ ' + (d.error || 'Ошибка'), false);
+    const list = document.getElementById('sessions_list');
+    if (d.sessions.length === 0) {
+      list.innerHTML = '<p style="color:#94a3b8">Пока нет сессий. Отправьте первый пуш-опрос.</p>';
+      return;
+    }
+    list.innerHTML = d.sessions.map(s => `
+      <div class="session-item">
+        <div>
+          <div class="title">${s.title}</div>
+          <div class="meta">${s.session_id} · ${s.insight_count} инсайтов · ${new Date(s.created_at).toLocaleString()}</div>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center">
+          <span class="badge ${s.is_active ? 'badge-active' : 'badge-inactive'}">${s.is_active ? 'Активна' : 'Завершена'}</span>
+          <button class="btn btn-sm btn-outline" onclick="viewInsights('${s.session_id}')">👁</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) { msg('❌ ' + e.message, false); }
+}
+
+async function viewInsights(sessionId) {
+  const admin_password = document.getElementById('list_password').value.trim();
+  try {
+    const r = await fetch(API + '?action=get_insights&session_id=' + encodeURIComponent(sessionId) + '&admin_password=' + encodeURIComponent(admin_password));
+    const d = await r.json();
+    if (!d.success) return msg('❌ ' + (d.error || 'Ошибка'), false);
+
+    const card = document.getElementById('insights_card');
+    card.style.display = 'block';
+    document.getElementById('insights_title').textContent = '📊 ' + (d.session ? d.session.title : sessionId);
+
+    const actions = document.getElementById('insights_actions');
+    actions.innerHTML = `
+      <button class="btn btn-sm btn-primary" onclick="triggerExcel('${sessionId}')">📥 Excel</button>
+      <button class="btn btn-sm btn-primary" onclick="triggerTrends('${sessionId}')">🤖 AI-тренды</button>
+    `;
+
+    const table = document.getElementById('insights_table');
+    if (!d.insights || d.insights.length === 0) {
+      table.innerHTML = '<p style="color:#94a3b8">Нет инсайтов по этой сессии.</p>';
+      return;
+    }
+    table.innerHTML = `<table class="insight-table">
+      <tr><th>#</th><th>Пользователь</th><th>Инсайт</th><th>Время</th></tr>
+      ${d.insights.map((n, i) => `<tr><td>${i+1}</td><td>${n.username || n.tg_id}</td><td>${n.raw_insight}</td><td>${new Date(n.timestamp).toLocaleString()}</td></tr>`).join('')}
+    </table>`;
+  } catch (e) { msg('❌ ' + e.message, false); }
+}
+
+async function triggerExcel(sessionId) {
+  const admin_password = document.getElementById('list_password').value.trim();
+  const tgId = prompt('Ваш Telegram ID (куда отправить Excel):');
+  if (!tgId) return;
+  try {
+    const r = await fetch(API + '?action=trigger_excel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'trigger_excel', session_id: sessionId, admin_tg_id: tgId, admin_password })
+    });
+    const d = await r.json();
+    if (d.success) msg('✅ ' + d.message, true);
+    else msg('❌ ' + (d.error || 'Ошибка'), false);
+  } catch (e) { msg('❌ ' + e.message, false); }
+}
+
+async function triggerTrends(sessionId) {
+  const admin_password = document.getElementById('list_password').value.trim();
+  const tgId = prompt('Ваш Telegram ID (куда отправить AI-анализ):');
+  if (!tgId) return;
+  try {
+    const r = await fetch(API + '?action=trigger_trends', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'trigger_trends', session_id: sessionId, admin_tg_id: tgId, admin_password })
+    });
+    const d = await r.json();
+    if (d.success) msg('✅ ' + d.message, true);
+    else msg('❌ ' + (d.error || 'Ошибка'), false);
+  } catch (e) { msg('❌ ' + e.message, false); }
+}
+</script>
+</body>
+</html>

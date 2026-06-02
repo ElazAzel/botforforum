@@ -9,13 +9,14 @@ function loadFromFile() {
       const data = fs.readFileSync(DB_PATH, 'utf-8');
       const parsed = JSON.parse(data);
       if (parsed.users && parsed.sessions && parsed.user_notes && parsed.user_notebooks) {
+        if (!parsed.categorized_notes) parsed.categorized_notes = {};
         return parsed;
       }
     }
   } catch (err) {
     console.warn('db.json load failed, using fresh store:', err.message);
   }
-  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {} };
+  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {} };
 }
 
 function saveToFile() {
@@ -40,9 +41,15 @@ async function saveUser(tgId, username) {
       tg_id: Number(tgId),
       username: username || 'Anonymous',
       pending_session_id: null,
+      pending_note: null,
       created_at: new Date().toISOString()
     };
     saveToFile();
+  } else {
+    if (store.users[key].pending_note === undefined) {
+      store.users[key].pending_note = null;
+      saveToFile();
+    }
   }
   return store.users[key];
 }
@@ -55,6 +62,14 @@ async function updateUserPendingSession(tgId, sessionId) {
     return true;
   }
   return false;
+}
+
+async function updateUserPendingNote(tgId, noteData) {
+  const key = String(tgId);
+  if (!store.users[key]) return false;
+  store.users[key].pending_note = noteData;
+  saveToFile();
+  return true;
 }
 
 async function updateAllUsersPendingSession(sessionId) {
@@ -128,6 +143,67 @@ async function updateUserNotebook(tgId, text) {
   saveToFile();
 }
 
+// --- КАТЕГОРИЗИРОВАННЫЕ ЗАМЕТКИ (по спикерам / общее) ---
+async function addSpeakerNote(tgId, speakerName, text) {
+  const key = String(tgId);
+  if (!store.categorized_notes[key]) store.categorized_notes[key] = { speakers: {}, general: [] };
+  if (!store.categorized_notes[key].speakers[speakerName]) store.categorized_notes[key].speakers[speakerName] = [];
+  store.categorized_notes[key].speakers[speakerName].push({
+    text, timestamp: new Date().toISOString()
+  });
+  saveToFile();
+  return true;
+}
+
+async function addGeneralNote(tgId, text) {
+  const key = String(tgId);
+  if (!store.categorized_notes[key]) store.categorized_notes[key] = { speakers: {}, general: [] };
+  store.categorized_notes[key].general.push({
+    text, timestamp: new Date().toISOString()
+  });
+  saveToFile();
+  return true;
+}
+
+async function getCategorizedNotes(tgId) {
+  const key = String(tgId);
+  return store.categorized_notes[key] || { speakers: {}, general: [] };
+}
+
+async function getSpeakerList(tgId) {
+  const notes = await getCategorizedNotes(tgId);
+  return Object.keys(notes.speakers);
+}
+
+async function getSpeakerNotes(tgId, speakerName) {
+  const notes = await getCategorizedNotes(tgId);
+  return notes.speakers[speakerName] || [];
+}
+
+async function getGeneralNotes(tgId) {
+  const notes = await getCategorizedNotes(tgId);
+  return notes.general || [];
+}
+
+// --- АДМИНИСТРИРОВАНИЕ ---
+async function getAllSessions() {
+  return Object.values(store.sessions);
+}
+
+async function getAllInsightsRaw() {
+  const all = [];
+  Object.keys(store.user_notes).forEach(sessionId => {
+    store.user_notes[sessionId].forEach(note => {
+      all.push(note);
+    });
+  });
+  return all;
+}
+
+async function getUserById(tgId) {
+  return store.users[String(tgId)] || null;
+}
+
 // --- УТИЛИТЫ ---
 async function getAllUsers() {
   return Object.values(store.users);
@@ -137,6 +213,7 @@ module.exports = {
   getUser,
   saveUser,
   updateUserPendingSession,
+  updateUserPendingNote,
   updateAllUsersPendingSession,
   getActiveSession,
   getSession,
@@ -145,5 +222,14 @@ module.exports = {
   getInsightsBySession,
   getUserNotebook,
   updateUserNotebook,
+  addSpeakerNote,
+  addGeneralNote,
+  getCategorizedNotes,
+  getSpeakerList,
+  getSpeakerNotes,
+  getGeneralNotes,
+  getAllSessions,
+  getAllInsightsRaw,
+  getUserById,
   getAllUsers
 };

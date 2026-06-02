@@ -6,6 +6,7 @@ const webhookHandler = require('./api/webhook');
 const pushPollHandler = require('./api/push-poll');
 const analyticsHandler = require('./api/analytics');
 const setupHandler = require('./api/setup');
+const adminHandler = require('./api/admin');
 
 // Создаем сервер, симулирующий среду Vercel Serverless
 const server = http.createServer(async (req, res) => {
@@ -56,6 +57,30 @@ const server = http.createServer(async (req, res) => {
         await analyticsHandler(req, res);
       } else if (pathname === '/api/setup') {
         await setupHandler(req, res);
+      } else if (pathname === '/api/admin') {
+        await adminHandler(req, res);
+      } else if (pathname === '/admin') {
+        const fs = require('fs');
+        const path = require('path');
+        try {
+          const html = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'), 'utf-8');
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.end(html);
+        } catch (err) {
+          res.statusCode = 404;
+          res.end('Admin page not found');
+        }
+      } else if (pathname === '/') {
+        const fs = require('fs');
+        const path = require('path');
+        try {
+          const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf-8');
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.end(html);
+        } catch (err) {
+          res.statusCode = 404;
+          res.end('Not Found');
+        }
       } else {
         res.statusCode = 404;
         res.end('Not Found');
@@ -75,5 +100,7 @@ server.listen(PORT, () => {
   console.log(` - Пуш-опросы (Admin): http://localhost:${PORT}/api/push-poll`);
   console.log(` - Аналитика и отчеты (Admin): http://localhost:${PORT}/api/analytics`);
   console.log(` - Установка вебхука: http://localhost:${PORT}/api/setup`);
+  console.log(` - Админ-панель: http://localhost:${PORT}/admin`);
+  console.log(` - Admin API: http://localhost:${PORT}/api/admin`);
   console.log(` - БД файл: db.json`);
 });

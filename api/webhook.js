@@ -64,6 +64,12 @@ const SPEAKERS_TEXT = `🎤 *Ключевые спикеры MBA AlmaU Impact Fo
 • *Виктория Торгунакова* — CEO Freedom Events.
 • *Нурасыл Джарбасов* — председатель совета директоров DEM Group, основатель Astana Venture Club.`;
 
+const SPEAKER_NAMES = [
+  'Павел Лукша', 'Тарик Курейши', 'Ильдар Валиуллов',
+  'Мухит Елеуов', 'Мират Ахметсадыков', 'Татьяна Иссык',
+  'Зафар Хашимов', 'Кайрат Боранбаев', 'Виктория Торгунакова', 'Нурасыл Джарбасов'
+];
+
 // Keyboards
 const getMainMenu = () => {
   return {
@@ -74,7 +80,7 @@ const getMainMenu = () => {
           { text: '🎤 Спикеры', callback_data: 'speakers' }
         ],
         [
-          { text: '📓 Мой блокнот', callback_data: 'notebook' }
+          { text: '📓 Мой блокнот', callback_data: 'nb' }
         ]
       ]
     }
@@ -95,6 +101,35 @@ const getProgramMenu = () => {
       ]
     }
   };
+};
+
+const getNotebookMenu = () => {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '📝 Добавить заметку по спикеру', callback_data: 'nb_sp' }],
+        [{ text: '📝 Общая заметка', callback_data: 'nb_gn' }],
+        [{ text: '📖 По спикерам', callback_data: 'nb_vsp' }],
+        [{ text: '📖 Общие заметки', callback_data: 'nb_vgn' }],
+        [{ text: '📖 Весь блокнот', callback_data: 'nb_all' }],
+        [{ text: '⬅️ Главное меню', callback_data: 'main_menu' }]
+      ]
+    }
+  };
+};
+
+const getSpeakerKeyboard = () => {
+  const rows = [];
+  for (let i = 0; i < SPEAKER_NAMES.length; i += 2) {
+    const row = [];
+    row.push({ text: SPEAKER_NAMES[i], callback_data: `spk_${i}` });
+    if (i + 1 < SPEAKER_NAMES.length) {
+      row.push({ text: SPEAKER_NAMES[i + 1], callback_data: `spk_${i + 1}` });
+    }
+    rows.push(row);
+  }
+  rows.push([{ text: '⬅️ Назад', callback_data: 'nb' }]);
+  return { reply_markup: { inline_keyboard: rows } };
 };
 
 // Graceful registration logic: ensures database records exist without resetting user state
@@ -166,34 +201,103 @@ bot.action('main_menu', async (ctx) => {
   await ctx.reply('👋 Главное меню бота конференции Meta-Harness:', getMainMenu());
 });
 
-bot.action('notebook', async (ctx) => {
-  try {
-    await ctx.answerCbQuery();
-  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  
+// Notebook sub-menu
+bot.action('nb', async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  await ctx.reply('📓 *Мой блокнот*\n\nВыберите действие:', { parse_mode: 'Markdown', ...getNotebookMenu() });
+});
+
+// Add note for a speaker — show speaker list
+bot.action('nb_sp', async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  await ctx.reply('🎤 Выберите спикера, по которому хотите добавить заметку:', getSpeakerKeyboard());
+});
+
+// Add general note — prompt user
+bot.action('nb_gn', async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  const tgId = ctx.from.id;
+  await db.updateUserPendingNote(tgId, { type: 'general' });
+  await ctx.reply('📝 Напишите вашу общую заметку о форуме прямо сейчас.');
+});
+
+// Speaker selected — set pending_note and prompt
+SPEAKER_NAMES.forEach((name, i) => {
+  bot.action(`spk_${i}`, async (ctx) => {
+    try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+    const tgId = ctx.from.id;
+    await db.updateUserPendingNote(tgId, { type: 'speaker', name });
+    await ctx.reply(`📝 Напишите вашу заметку по спикеру *${name}*:`, { parse_mode: 'Markdown' });
+  });
+});
+
+// View notes grouped by speaker
+bot.action('nb_vsp', async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
   const tgId = ctx.from.id;
   await registerUser(tgId, ctx.from.username || 'Anonymous');
+  const notes = await db.getCategorizedNotes(tgId);
+  const speakerNames = Object.keys(notes.speakers);
   
+  if (speakerNames.length === 0) {
+    return ctx.reply('У вас пока нет заметок по спикерам.', getNotebookMenu());
+  }
+
+  let text = '';
+  for (const name of speakerNames) {
+    const items = notes.speakers[name];
+    text += `*${name}:*\n`;
+    items.forEach(n => { text += `• ${n.text}\n`; });
+    text += '\n';
+  }
+
+  if (text.length > 4000) {
+    const buf = Buffer.from(text, 'utf-8');
+    await ctx.replyWithDocument({ source: buf, filename: `speaker_notes_${tgId}.txt` }, { caption: '📖 Заметки по спикерам', ...getNotebookMenu() });
+  } else {
+    await ctx.reply(`📖 *Заметки по спикерам:*\n\n${text}`, { parse_mode: 'Markdown', ...getNotebookMenu() });
+  }
+});
+
+// View general notes
+bot.action('nb_vgn', async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || 'Anonymous');
+  const notes = await db.getGeneralNotes(tgId);
+
+  if (notes.length === 0) {
+    return ctx.reply('У вас пока нет общих заметок.', getNotebookMenu());
+  }
+
+  const text = notes.map(n => `• ${n.text}`).join('\n');
+  if (text.length > 4000) {
+    const buf = Buffer.from(text, 'utf-8');
+    await ctx.replyWithDocument({ source: buf, filename: `general_notes_${tgId}.txt` }, { caption: '📖 Общие заметки', ...getNotebookMenu() });
+  } else {
+    await ctx.reply(`📖 *Общие заметки:*\n\n${text}`, { parse_mode: 'Markdown', ...getNotebookMenu() });
+  }
+});
+
+// View entire notebook (original behavior)
+bot.action('nb_all', async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || 'Anonymous');
   const text = await db.getUserNotebook(tgId);
     
   if (!text || text.trim() === '') {
-    return ctx.reply(
-      `📓 *Ваш блокнот пока пуст.*\n\nКогда организаторы отправят пуш-опрос по сессии, пришлите свой инсайт в ответ. Он автоматически запишется сюда!`,
-      { parse_mode: 'Markdown', ...getMainMenu() }
-    );
+    return ctx.reply('📓 *Ваш блокнот пока пуст.*\n\nДобавляйте заметки через меню блокнота или отвечайте на пуш-опросы.', { parse_mode: 'Markdown', ...getNotebookMenu() });
   }
   
   if (text.length > 4000) {
     const buffer = Buffer.from(text, 'utf-8');
-    await ctx.replyWithDocument({
-      source: buffer,
-      filename: `notebook_${tgId}.txt`
-    }, {
-      caption: `📓 Ваш блокнот (слишком длинный для сообщения, отправлен файлом)`,
-      ...getMainMenu()
+    await ctx.replyWithDocument({ source: buffer, filename: `notebook_${tgId}.txt` }, {
+      caption: '📓 Весь блокнот (отправлен файлом)',
+      ...getNotebookMenu()
     });
   } else {
-    await ctx.reply(`📓 *Ваш блокнот:*\n\n${text}`, { parse_mode: 'Markdown', ...getMainMenu() });
+    await ctx.reply(`📓 *Весь блокнот:*\n\n${text}`, { parse_mode: 'Markdown', ...getNotebookMenu() });
   }
 });
 
@@ -291,9 +395,30 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // 1. Check if user is in feedback state
+  // 1. Check if user has a pending categorized note
   const user = await db.getUser(tgId);
 
+  if (user && user.pending_note) {
+    const note = user.pending_note;
+    await db.updateUserPendingNote(tgId, null);
+
+    if (note.type === 'speaker') {
+      await db.addSpeakerNote(tgId, note.name, userInput);
+      await ctx.reply(
+        `✅ Заметка по спикеру *${note.name}* сохранена в блокнот!`,
+        { parse_mode: 'Markdown', ...getNotebookMenu() }
+      );
+    } else if (note.type === 'general') {
+      await db.addGeneralNote(tgId, userInput);
+      await ctx.reply(
+        '✅ Общая заметка сохранена в блокнот!',
+        { parse_mode: 'Markdown', ...getNotebookMenu() }
+      );
+    }
+    return;
+  }
+
+  // 2. Check if user is in push-poll feedback state
   if (!user || !user.pending_session_id) {
     return ctx.reply(
       `🤖 Чтобы сохранить инсайт в блокнот, пожалуйста, дождитесь пуш-опроса от организаторов.\n\nИспользуйте меню для навигации:`,

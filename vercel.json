@@ -5,6 +5,7 @@
     { "src": "api/push-poll.js", "use": "@vercel/node" },
     { "src": "api/analytics.js", "use": "@vercel/node" },
     { "src": "api/setup.js", "use": "@vercel/node" },
+    { "src": "api/admin.js", "use": "@vercel/node" },
     { "src": "public/**", "use": "@vercel/static" }
   ],
   "routes": [
@@ -12,6 +13,8 @@
     { "src": "/api/push-poll", "dest": "/api/push-poll.js" },
     { "src": "/api/analytics", "dest": "/api/analytics.js" },
     { "src": "/api/setup", "dest": "/api/setup.js" },
+    { "src": "/api/admin", "dest": "/api/admin.js" },
+    { "src": "/admin", "dest": "/public/admin.html" },
     { "src": "/", "dest": "/public/index.html" }
   ]
 }
