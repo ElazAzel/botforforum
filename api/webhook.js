@@ -479,8 +479,29 @@ bot.on('text', async (ctx) => {
   }
 });
 
+// Auto-setup webhook on Vercel — avoids manual /api/setup after each deploy
+let lastWebhookUrl = '';
+
+async function ensureWebhook(req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const currentUrl = `${proto}://${host}/api/webhook`;
+  if (currentUrl === lastWebhookUrl) return;
+  try {
+    const r = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`, { url: currentUrl });
+    if (r.data?.ok) {
+      lastWebhookUrl = currentUrl;
+      console.log('Webhook set to', currentUrl);
+    }
+  } catch (e) {
+    console.warn('Webhook auto-setup failed:', e.message);
+  }
+}
+
 // Vercel Serverless Function entry point
 module.exports = async (req, res) => {
+  await ensureWebhook(req);
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     return res.status(200).send('Webhook is up and running.');
@@ -491,7 +512,6 @@ module.exports = async (req, res) => {
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Telegraf handleUpdate error:', err);
-    // Return 200 to prevent Telegram webhook from getting blocked and retrying endlessly
     return res.status(200).json({ error: err.message });
   }
 };
