@@ -2,32 +2,52 @@ const fs = require('fs');
 const path = require('path');
 
 const DB_PATH = path.join(__dirname, '..', 'db.json');
+const BLOB_KEY = 'db.json';
 
-function loadFromFile() {
+let blobPut, blobGet;
+if (process.env.BLOB_READ_WRITE_TOKEN) {
+  const m = require('@vercel/blob');
+  blobPut = m.put; blobGet = m.get;
+}
+
+function freshStore() {
+  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {} };
+}
+
+const Empty = Symbol('pending');
+let store = Empty;
+
+function initSync() {
   try {
     if (fs.existsSync(DB_PATH)) {
-      const data = fs.readFileSync(DB_PATH, 'utf-8');
-      const parsed = JSON.parse(data);
-      if (parsed.users && parsed.sessions && parsed.user_notes && parsed.user_notebooks) {
-        if (!parsed.categorized_notes) parsed.categorized_notes = {};
-        return parsed;
-      }
+      const d = fs.readFileSync(DB_PATH, 'utf-8');
+      const p = JSON.parse(d);
+      if (p.users && p.sessions) { store = p; return; }
     }
-  } catch (err) {
-    console.warn('db.json load failed, using fresh store:', err.message);
-  }
-  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {} };
+  } catch (e) {}
+  store = freshStore();
+}
+initSync();
+
+if (blobGet) {
+  blobGet(BLOB_KEY).then(b => {
+    if (!b) return;
+    return b.text().then(t => {
+      const p = JSON.parse(t);
+      if (p.users && p.sessions) store = p;
+    });
+  }).catch(() => {});
 }
 
 function saveToFile() {
   try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(store, null, 2), 'utf-8');
+    const d = JSON.stringify(store, null, 2);
+    fs.writeFileSync(DB_PATH, d, 'utf-8');
+    if (blobPut) blobPut(BLOB_KEY, d, { contentType: 'application/json', access: 'private' }).catch(() => {});
   } catch (err) {
-    console.warn('db.json save failed (read-only fs?):', err.message);
+    console.warn('db save failed:', err.message);
   }
 }
-
-let store = loadFromFile();
 
 // --- ПОЛЬЗОВАТЕЛИ ---
 async function getUser(tgId) {
