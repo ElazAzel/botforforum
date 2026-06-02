@@ -64,6 +64,11 @@ module.exports = async (req, res) => {
       }
       return res.json({ success: true, sent, total: users.length });
 
+    } else if (action === 'delete_session') {
+      if (!session_id) return res.status(400).json({ error: 'session_id required' });
+      const deleted = await db.deleteSession(session_id);
+      return res.json({ success: true, deleted });
+
     } else if (action === 'download_excel') {
       if (!session_id) return res.status(400).json({ error: 'session_id required' });
       const session = await db.getSession(session_id);

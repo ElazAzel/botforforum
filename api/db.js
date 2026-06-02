@@ -190,6 +190,19 @@ async function getAllSessions() {
   return Object.values(store.sessions);
 }
 
+async function deleteSession(sessionId) {
+  const existed = !!store.sessions[sessionId];
+  delete store.sessions[sessionId];
+  delete store.user_notes[sessionId];
+  Object.keys(store.users).forEach(id => {
+    if (store.users[id].pending_session_id === sessionId) {
+      store.users[id].pending_session_id = null;
+    }
+  });
+  saveToFile();
+  return existed;
+}
+
 async function getAllInsightsRaw() {
   const all = [];
   Object.keys(store.user_notes).forEach(sessionId => {
@@ -231,5 +244,6 @@ module.exports = {
   getAllSessions,
   getAllInsightsRaw,
   getUserById,
+  deleteSession,
   getAllUsers
 };
