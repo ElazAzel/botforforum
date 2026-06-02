@@ -14,6 +14,7 @@
     { "src": "/api/analytics", "dest": "/api/analytics.js" },
     { "src": "/api/setup", "dest": "/api/setup.js" },
     { "src": "/api/admin", "dest": "/api/admin.js" },
+    { "src": "/favicon\\.ico", "dest": "/favicon.svg" },
     { "src": "/admin", "dest": "/public/admin.html" },
     { "src": "/", "dest": "/public/index.html" }
   ]
