@@ -348,7 +348,7 @@ You MUST respond with a JSON object:
   for (let i = 0; i < retries; i++) {
     try {
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-1.5-flash'}:generateContent?key=${geminiApiKey}`,
         payload,
         {
           headers: {

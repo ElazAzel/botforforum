@@ -21,9 +21,10 @@
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }
 
-  .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
   .btn-primary { background: #0ea5e9; color: #0f172a; width: 100%; justify-content: center; }
   .btn-primary:hover { background: #38bdf8; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
   .btn-sm { padding: 6px 12px; font-size: 12px; }
   .btn-outline { background: transparent; border: 1px solid #475569; color: #94a3b8; }
   .btn-outline:hover { border-color: #38bdf8; color: #38bdf8; }
@@ -33,6 +34,9 @@
   .btn-red:hover { background: #f87171; }
   .btn-orange { background: #f59e0b; color: #0f172a; }
   .btn-orange:hover { background: #fbbf24; }
+  .btn-purple { background: #8b5cf6; color: #fff; width: 100%; }
+  .btn-purple:hover { background: #a78bfa; }
+  .btn-purple:disabled { opacity: .5; cursor: not-allowed; }
 
   .session { background: #0f172a; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .session .info { flex: 1; min-width: 0; }
@@ -51,13 +55,34 @@
   .msg-ok { display: block; background: #064e3b; color: #6ee7b7; }
   .msg-err { display: block; background: #7f1d1d; color: #fca5a5; }
 
-  .hidden { display: none; }
+  .hidden { display: none !important; }
   .empty { color: #64748b; font-size: 13px; text-align: center; padding: 20px; }
   .stat { font-size: 12px; color: #64748b; margin-bottom: 10px; }
   .confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
   .confirm-box { background: #1e293b; border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; text-align: center; }
   .confirm-box p { margin-bottom: 16px; font-size: 14px; }
   .confirm-box .actions { display: flex; gap: 10px; justify-content: center; }
+
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn-loading { pointer-events: none; }
+
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .card { padding: 14px; }
+    .row { flex-direction: column; gap: 0; }
+    .pw-bar { flex-direction: column; align-items: stretch; }
+    .pw-bar .btn { width: 100%; }
+    .session { flex-wrap: wrap; }
+    .session .actions { width: 100%; justify-content: flex-end; padding-top: 6px; border-top: 1px solid #1e293b; }
+    .confirm-box { width: 94%; padding: 18px; }
+    .confirm-box .actions { flex-direction: column; }
+    .confirm-box .actions .btn { width: 100%; }
+    h1 { font-size: 18px; }
+    .subtitle { font-size: 12px; }
+    #insight_title { font-size: 13px; }
+    #insight_block .actions { flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
@@ -66,7 +91,6 @@
   <p class="subtitle">MBA AlmaU Impact Forum — управление ботом</p>
   <div id="msg" class="msg"></div>
 
-  <!-- Логин -->
   <div class="card" id="login_card">
     <h2>Вход</h2>
     <div class="pw-bar">
@@ -75,13 +99,9 @@
     </div>
   </div>
 
-  <!-- Основной интерфейс -->
   <div id="main" class="hidden">
-
-    <!-- Статистика -->
     <div class="stat" id="stats"></div>
 
-    <!-- Создать пуш -->
     <div class="card">
       <h2>Создать пуш-опрос</h2>
       <div class="row">
@@ -90,10 +110,9 @@
       </div>
       <label>Вопрос участникам</label>
       <textarea id="question">Какие главные поинты вы выделили после этой встречи?</textarea>
-      <button class="btn btn-primary" onclick="createPush()">📢 Разослать опрос всем участникам</button>
+      <button class="btn btn-primary" id="push_btn" onclick="createPush()">📢 Разослать опрос всем участникам</button>
     </div>
 
-    <!-- Простая рассылка -->
     <div class="card">
       <h2>🔔 Простая рассылка (информационная)</h2>
       <label>Текст сообщения</label>
@@ -103,19 +122,17 @@
       <div id="broadcast_preview" style="display:none; margin-bottom:10px; max-width:200px">
         <img id="broadcast_preview_img" style="width:100%; border-radius:8px; border:1px solid #334155">
       </div>
-      <button class="btn btn-primary" style="background:#8b5cf6" onclick="sendBroadcast()">🔔 Отправить уведомление всем</button>
+      <button class="btn btn-purple" id="broadcast_btn" onclick="sendBroadcast()">🔔 Отправить уведомление всем</button>
     </div>
 
-    <!-- Сессии -->
     <div class="card">
       <h2>Созданные опросы</h2>
       <div id="sessions"><div class="empty">Нажмите «Войти»</div></div>
     </div>
 
-    <!-- Инсайты -->
     <div id="insights_block" class="hidden">
       <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:12px">
+        <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:12px; flex-wrap:wrap; gap:6px">
           <h2 id="insight_title" style="margin-bottom:0">Ответы</h2>
           <div style="display:flex; gap:6px; flex-wrap:wrap">
             <button class="btn btn-sm btn-green" onclick="downloadExcel()">📥 Excel</button>
@@ -128,7 +145,6 @@
   </div>
 </div>
 
-<!-- Confirm dialog -->
 <div id="confirm" class="confirm-overlay hidden" onclick="if(event.target===this)hideConfirm()">
   <div class="confirm-box">
     <p id="confirm_text">Вы уверены?</p>
@@ -141,6 +157,7 @@
 
 <script>
 let PW = '';
+const esc = s => { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; };
 
 function msg(text, ok) {
   const el = document.getElementById('msg');
@@ -193,25 +210,32 @@ async function loadStats() {
   } catch (e) {}
 }
 
+function setLoading(btnId, loading, text) {
+  const btn = document.getElementById(btnId);
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> ' + (text || 'Отправка...');
+  } else {
+    btn.disabled = false;
+    btn.textContent = text;
+  }
+}
+
 async function createPush() {
   const sid = document.getElementById('sid').value.trim();
   const title = document.getElementById('title').value.trim();
   const question = document.getElementById('question').value.trim();
   if (!sid || !title) return msg('Заполните ID и название сессии', false);
-  const btn = document.querySelector('.card:first-of-type .btn-primary');
-  btn.textContent = '⏳ Отправка...';
-  btn.disabled = true;
+  setLoading('push_btn', true);
   try {
     const d = await apiPost({ action: 'push_poll', session_id: sid, title, question });
     if (d.success) msg('✅ Разослано: ' + d.sent + ' из ' + d.total + ' участников', true);
     else msg('❌ ' + (d.error || 'Ошибка'), false);
     await loadAll();
   } catch (e) { msg('❌ Ошибка соединения: ' + e.message, false); }
-  btn.textContent = '📢 Разослать опрос всем участникам';
-  btn.disabled = false;
+  setLoading('push_btn', false, '📢 Разослать опрос всем участникам');
 }
 
-// Preview selected image
 document.getElementById('broadcast_img').addEventListener('change', function() {
   const file = this.files[0];
   const preview = document.getElementById('broadcast_preview');
@@ -225,24 +249,29 @@ document.getElementById('broadcast_img').addEventListener('change', function() {
 });
 
 async function sendBroadcast() {
-  const msg = document.getElementById('broadcast_msg').value.trim();
-  if (!msg) return msg('Напишите текст уведомления', false);
+  const msgText = document.getElementById('broadcast_msg').value.trim();
+  if (!msgText) return msg('Напишите текст уведомления', false);
   const fileInput = document.getElementById('broadcast_img');
-  const btn = document.querySelector('.btn[style*="background:#8b5cf6"]');
-  btn.textContent = '⏳ Отправка...';
-  btn.disabled = true;
+  setLoading('broadcast_btn', true);
   try {
     let image_base64 = '';
     if (fileInput.files && fileInput.files[0]) {
-      const buf = await fileInput.files[0].arrayBuffer();
-      image_base64 = btoa(new Uint8Array(buf).reduce((d, b) => d + String.fromCharCode(b), ''));
+      const reader = new FileReader();
+      image_base64 = await new Promise((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result;
+          const comma = result.indexOf(',');
+          resolve(comma >= 0 ? result.substring(comma + 1) : result);
+        };
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(fileInput.files[0]);
+      });
     }
-    const d = await apiPost({ action: 'broadcast', message: msg, image_base64 });
+    const d = await apiPost({ action: 'broadcast', message: msgText, image_base64 });
     if (d.success) msg('✅ Уведомление отправлено: ' + d.sent + ' из ' + d.total + ' участников', true);
     else msg('❌ ' + (d.error || 'Ошибка'), false);
   } catch (e) { msg('❌ Ошибка: ' + e.message, false); }
-  btn.textContent = '🔔 Отправить уведомление всем';
-  btn.disabled = false;
+  setLoading('broadcast_btn', false, '🔔 Отправить уведомление всем');
 }
 
 let currentSession = null;
@@ -256,18 +285,21 @@ async function loadSessions() {
       el.innerHTML = '<div class="empty">Пока нет ни одного опроса. Создайте первый выше.</div>';
       return;
     }
-    el.innerHTML = d.sessions.map(s => `
+    el.innerHTML = d.sessions.map(s => {
+      const safeTitle = esc(s.title);
+      const safeId = esc(s.session_id);
+      return `
       <div class="session">
         <div class="info">
-          <div class="title">${s.title} <span class="badge ${s.is_active ? 'badge-green' : 'badge-gray'}">${s.is_active ? 'Активен' : 'Завершён'}</span></div>
-          <div class="meta">${s.session_id} · ${s.insight_count} ответов</div>
+          <div class="title">${safeTitle} <span class="badge ${s.is_active ? 'badge-green' : 'badge-gray'}">${s.is_active ? 'Активен' : 'Завершён'}</span></div>
+          <div class="meta">${safeId} · ${s.insight_count} ответов</div>
         </div>
         <div class="actions">
-          <button class="btn btn-sm btn-outline" onclick="viewSession('${s.session_id}')">👁</button>
-          <button class="btn btn-sm btn-red" onclick="confirmDelete('${s.session_id}','${s.title.replace(/'/g,"\\'")}')">🗑</button>
+          <button class="btn btn-sm btn-outline" onclick="viewSession('${safeId}')">👁</button>
+          <button class="btn btn-sm btn-red" onclick="confirmDelete('${safeId}','${esc(safeTitle)}')">🗑</button>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   } catch (e) { msg('Ошибка загрузки: ' + e.message, false); }
 }
 
@@ -297,15 +329,19 @@ async function viewSession(sid) {
       el.innerHTML = '<div class="empty">Пока нет ответов на этот опрос</div>';
       return;
     }
-    el.innerHTML = d.insights.map(n => `
+    el.innerHTML = d.insights.map(n => {
+      const name = esc(n.username || n.tg_id);
+      const time = new Date(n.timestamp).toLocaleString();
+      const insight = esc(n.raw_insight);
+      return `
       <div class="session" style="display:block;padding:10px 14px">
         <div class="meta" style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span>${n.username || n.tg_id}</span>
-          <span>${new Date(n.timestamp).toLocaleString()}</span>
+          <span>${name}</span>
+          <span>${time}</span>
         </div>
-        <div style="font-size:14px">${n.raw_insight}</div>
-      </div>
-    `).join('');
+        <div style="font-size:14px">${insight}</div>
+      </div>`;
+    }).join('');
   } catch (e) { msg('Ошибка: ' + e.message, false); }
 }
 
