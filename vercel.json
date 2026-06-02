@@ -3,11 +3,13 @@
   "builds": [
     { "src": "api/webhook.js", "use": "@vercel/node" },
     { "src": "api/push-poll.js", "use": "@vercel/node" },
-    { "src": "api/analytics.js", "use": "@vercel/node" }
+    { "src": "api/analytics.js", "use": "@vercel/node" },
+    { "src": "api/setup.js", "use": "@vercel/node" }
   ],
   "routes": [
     { "src": "/api/webhook", "dest": "/api/webhook.js" },
     { "src": "/api/push-poll", "dest": "/api/push-poll.js" },
-    { "src": "/api/analytics", "dest": "/api/analytics.js" }
+    { "src": "/api/analytics", "dest": "/api/analytics.js" },
+    { "src": "/api/setup", "dest": "/api/setup.js" }
   ]
 }
