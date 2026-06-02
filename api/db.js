@@ -14,29 +14,40 @@ function freshStore() {
   return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {} };
 }
 
-const Empty = Symbol('pending');
-let store = Empty;
+let store = freshStore();
+let loaded = false;
+let loadPromise = null;
 
-function initSync() {
+// On Vercel: async load from blob, sync file fallback for local dev
+if (blobGet) {
+  loadPromise = blobGet(BLOB_KEY).then(b => {
+    if (!b) return;
+    return b.text().then(t => {
+      const p = JSON.parse(t);
+      if (p.users && p.sessions) {
+        Object.keys(p).forEach(k => {
+          if (typeof p[k] === 'object' && !Array.isArray(p[k])) {
+            Object.assign(store[k], p[k]);
+          } else {
+            store[k] = p[k];
+          }
+        });
+      }
+    });
+  }).then(() => { loaded = true; }).catch(() => { loaded = true; });
+} else {
   try {
     if (fs.existsSync(DB_PATH)) {
       const d = fs.readFileSync(DB_PATH, 'utf-8');
       const p = JSON.parse(d);
-      if (p.users && p.sessions) { store = p; return; }
+      if (p.users && p.sessions) store = p;
     }
   } catch (e) {}
-  store = freshStore();
+  loaded = true;
 }
-initSync();
 
-if (blobGet) {
-  blobGet(BLOB_KEY).then(b => {
-    if (!b) return;
-    return b.text().then(t => {
-      const p = JSON.parse(t);
-      if (p.users && p.sessions) store = p;
-    });
-  }).catch(() => {});
+async function ensureLoaded() {
+  if (!loaded && loadPromise) await loadPromise;
 }
 
 function saveToFile() {
@@ -51,10 +62,12 @@ function saveToFile() {
 
 // --- ПОЛЬЗОВАТЕЛИ ---
 async function getUser(tgId) {
+  await ensureLoaded();
   return store.users[String(tgId)] || null;
 }
 
 async function saveUser(tgId, username) {
+  await ensureLoaded();
   const key = String(tgId);
   if (!store.users[key]) {
     store.users[key] = {
@@ -75,6 +88,7 @@ async function saveUser(tgId, username) {
 }
 
 async function updateUserPendingSession(tgId, sessionId) {
+  await ensureLoaded();
   const key = String(tgId);
   if (store.users[key]) {
     store.users[key].pending_session_id = sessionId;
@@ -85,6 +99,7 @@ async function updateUserPendingSession(tgId, sessionId) {
 }
 
 async function updateUserPendingNote(tgId, noteData) {
+  await ensureLoaded();
   const key = String(tgId);
   if (!store.users[key]) return false;
   store.users[key].pending_note = noteData;
@@ -93,6 +108,7 @@ async function updateUserPendingNote(tgId, noteData) {
 }
 
 async function updateAllUsersPendingSession(sessionId) {
+  await ensureLoaded();
   Object.keys(store.users).forEach(id => {
     store.users[id].pending_session_id = sessionId;
   });
@@ -100,16 +116,19 @@ async function updateAllUsersPendingSession(sessionId) {
 }
 
 async function getActiveSession() {
+  await ensureLoaded();
   const sessions = Object.values(store.sessions);
   return sessions.find(s => s.is_active) || null;
 }
 
 // --- СЕССИИ ---
 async function getSession(sessionId) {
+  await ensureLoaded();
   return store.sessions[sessionId] || null;
 }
 
 async function saveSession(sessionId, title, isActive = false) {
+  await ensureLoaded();
   let session = store.sessions[sessionId];
   if (session) {
     session.title = title;
@@ -136,6 +155,7 @@ async function saveSession(sessionId, title, isActive = false) {
 
 // --- ИНСАЙТЫ ---
 async function addInsight(tgId, sessionId, rawInsight) {
+  await ensureLoaded();
   const newNote = {
     id: Math.random().toString(36).substring(2, 11),
     tg_id: Number(tgId),
@@ -150,21 +170,25 @@ async function addInsight(tgId, sessionId, rawInsight) {
 }
 
 async function getInsightsBySession(sessionId) {
+  await ensureLoaded();
   return store.user_notes[sessionId] || [];
 }
 
 // --- БЛОКНОТЫ ---
 async function getUserNotebook(tgId) {
+  await ensureLoaded();
   return store.user_notebooks[String(tgId)] || '';
 }
 
 async function updateUserNotebook(tgId, text) {
+  await ensureLoaded();
   store.user_notebooks[String(tgId)] = text;
   saveToFile();
 }
 
-// --- КАТЕГОРИЗИРОВАННЫЕ ЗАМЕТКИ (по спикерам / общее) ---
+// --- КАТЕГОРИЗИРОВАННЫЕ ЗАМЕТКИ ---
 async function addSpeakerNote(tgId, speakerName, text) {
+  await ensureLoaded();
   const key = String(tgId);
   if (!store.categorized_notes[key]) store.categorized_notes[key] = { speakers: {}, general: [] };
   if (!store.categorized_notes[key].speakers[speakerName]) store.categorized_notes[key].speakers[speakerName] = [];
@@ -176,6 +200,7 @@ async function addSpeakerNote(tgId, speakerName, text) {
 }
 
 async function addGeneralNote(tgId, text) {
+  await ensureLoaded();
   const key = String(tgId);
   if (!store.categorized_notes[key]) store.categorized_notes[key] = { speakers: {}, general: [] };
   store.categorized_notes[key].general.push({
@@ -186,6 +211,7 @@ async function addGeneralNote(tgId, text) {
 }
 
 async function getCategorizedNotes(tgId) {
+  await ensureLoaded();
   const key = String(tgId);
   return store.categorized_notes[key] || { speakers: {}, general: [] };
 }
@@ -207,10 +233,12 @@ async function getGeneralNotes(tgId) {
 
 // --- АДМИНИСТРИРОВАНИЕ ---
 async function getAllSessions() {
+  await ensureLoaded();
   return Object.values(store.sessions);
 }
 
 async function deleteSession(sessionId) {
+  await ensureLoaded();
   const existed = !!store.sessions[sessionId];
   delete store.sessions[sessionId];
   delete store.user_notes[sessionId];
@@ -224,6 +252,7 @@ async function deleteSession(sessionId) {
 }
 
 async function getAllInsightsRaw() {
+  await ensureLoaded();
   const all = [];
   Object.keys(store.user_notes).forEach(sessionId => {
     store.user_notes[sessionId].forEach(note => {
@@ -234,11 +263,12 @@ async function getAllInsightsRaw() {
 }
 
 async function getUserById(tgId) {
+  await ensureLoaded();
   return store.users[String(tgId)] || null;
 }
 
-// --- УТИЛИТЫ ---
 async function getAllUsers() {
+  await ensureLoaded();
   return Object.values(store.users);
 }
 
