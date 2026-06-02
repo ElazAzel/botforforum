@@ -210,6 +210,8 @@ bot.action('nb', async (ctx) => {
 // Add note for a speaker — show speaker list
 bot.action('nb_sp', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || 'Anonymous');
   await ctx.reply('🎤 Выберите спикера, по которому хотите добавить заметку:', getSpeakerKeyboard());
 });
 
@@ -217,6 +219,7 @@ bot.action('nb_sp', async (ctx) => {
 bot.action('nb_gn', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
   const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || 'Anonymous');
   await db.updateUserPendingNote(tgId, { type: 'general' });
   await ctx.reply('📝 Напишите вашу общую заметку о форуме прямо сейчас.');
 });
@@ -226,6 +229,7 @@ SPEAKER_NAMES.forEach((name, i) => {
   bot.action(`spk_${i}`, async (ctx) => {
     try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
     const tgId = ctx.from.id;
+    await registerUser(tgId, ctx.from.username || 'Anonymous');
     await db.updateUserPendingNote(tgId, { type: 'speaker', name });
     await ctx.reply(`📝 Напишите вашу заметку по спикеру *${name}*:`, { parse_mode: 'Markdown' });
   });
