@@ -93,6 +93,19 @@
       <button class="btn btn-primary" onclick="createPush()">📢 Разослать опрос всем участникам</button>
     </div>
 
+    <!-- Простая рассылка -->
+    <div class="card">
+      <h2>🔔 Простая рассылка (информационная)</h2>
+      <label>Текст сообщения</label>
+      <textarea id="broadcast_msg" placeholder="Уважаемые участники, просим всех вернуться в зал..."></textarea>
+      <label>Изображение (необязательно)</label>
+      <input type="file" id="broadcast_img" accept="image/*" style="padding:6px; font-size:13px">
+      <div id="broadcast_preview" style="display:none; margin-bottom:10px; max-width:200px">
+        <img id="broadcast_preview_img" style="width:100%; border-radius:8px; border:1px solid #334155">
+      </div>
+      <button class="btn btn-primary" style="background:#8b5cf6" onclick="sendBroadcast()">🔔 Отправить уведомление всем</button>
+    </div>
+
     <!-- Сессии -->
     <div class="card">
       <h2>Созданные опросы</h2>
@@ -195,6 +208,40 @@ async function createPush() {
     await loadAll();
   } catch (e) { msg('❌ Ошибка соединения: ' + e.message, false); }
   btn.textContent = '📢 Разослать опрос всем участникам';
+  btn.disabled = false;
+}
+
+// Preview selected image
+document.getElementById('broadcast_img').addEventListener('change', function() {
+  const file = this.files[0];
+  const preview = document.getElementById('broadcast_preview');
+  if (!file) { preview.style.display = 'none'; return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('broadcast_preview_img').src = e.target.result;
+    preview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
+
+async function sendBroadcast() {
+  const msg = document.getElementById('broadcast_msg').value.trim();
+  if (!msg) return msg('Напишите текст уведомления', false);
+  const fileInput = document.getElementById('broadcast_img');
+  const btn = document.querySelector('.btn[style*="background:#8b5cf6"]');
+  btn.textContent = '⏳ Отправка...';
+  btn.disabled = true;
+  try {
+    let image_base64 = '';
+    if (fileInput.files && fileInput.files[0]) {
+      const buf = await fileInput.files[0].arrayBuffer();
+      image_base64 = btoa(new Uint8Array(buf).reduce((d, b) => d + String.fromCharCode(b), ''));
+    }
+    const d = await apiPost({ action: 'broadcast', message: msg, image_base64 });
+    if (d.success) msg('✅ Уведомление отправлено: ' + d.sent + ' из ' + d.total + ' участников', true);
+    else msg('❌ ' + (d.error || 'Ошибка'), false);
+  } catch (e) { msg('❌ Ошибка: ' + e.message, false); }
+  btn.textContent = '🔔 Отправить уведомление всем';
   btn.disabled = false;
 }
 

@@ -64,6 +64,27 @@ module.exports = async (req, res) => {
       }
       return res.json({ success: true, sent, total: users.length });
 
+    } else if (action === 'broadcast') {
+      const { message, image_base64 } = params;
+      if (!message) return res.status(400).json({ error: 'message required' });
+      const users = await db.getAllUsers();
+      if (!users || users.length === 0) {
+        return res.json({ success: true, sent: 0, total: 0 });
+      }
+      let sent = 0;
+      for (const user of users) {
+        try {
+          if (image_base64) {
+            const buf = Buffer.from(image_base64, 'base64');
+            await telegram.sendPhoto(user.tg_id, { source: buf, filename: 'image.jpg' }, { caption: message, parse_mode: 'Markdown' });
+          } else {
+            await telegram.sendMessage(user.tg_id, message, { parse_mode: 'Markdown' });
+          }
+          sent++;
+        } catch (e) { console.error('broadcast failed:', user.tg_id, e.message); }
+      }
+      return res.json({ success: true, sent, total: users.length });
+
     } else if (action === 'delete_session') {
       if (!session_id) return res.status(400).json({ error: 'session_id required' });
       const deleted = await db.deleteSession(session_id);
