@@ -5,6 +5,7 @@ const url = require('url');
 const webhookHandler = require('./api/webhook');
 const pushPollHandler = require('./api/push-poll');
 const analyticsHandler = require('./api/analytics');
+const setupHandler = require('./api/setup');
 
 // Создаем сервер, симулирующий среду Vercel Serverless
 const server = http.createServer(async (req, res) => {
@@ -53,6 +54,8 @@ const server = http.createServer(async (req, res) => {
         await pushPollHandler(req, res);
       } else if (pathname === '/api/analytics') {
         await analyticsHandler(req, res);
+      } else if (pathname === '/api/setup') {
+        await setupHandler(req, res);
       } else {
         res.statusCode = 404;
         res.end('Not Found');
@@ -67,9 +70,10 @@ const server = http.createServer(async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 Локальный сервер запущен на http://localhost:${PORT}`);
+  console.log(`Локальный сервер запущен на http://localhost:${PORT}`);
   console.log(` - Вебхук Telegram: http://localhost:${PORT}/api/webhook`);
   console.log(` - Пуш-опросы (Admin): http://localhost:${PORT}/api/push-poll`);
   console.log(` - Аналитика и отчеты (Admin): http://localhost:${PORT}/api/analytics`);
-  console.log(` БД файл db.json готов к работе.`);
+  console.log(` - Установка вебхука: http://localhost:${PORT}/api/setup`);
+  console.log(` - БД файл: db.json`);
 });

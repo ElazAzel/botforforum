@@ -109,37 +109,46 @@ bot.start(async (ctx) => {
   
   await registerUser(tgId, username);
   
-  await ctx.reply(
-    `👋 Приветствую в боте конференции Meta-Harness!\n\nИспользуйте меню ниже для навигации. Во время докладов вы будете получать пуш-опросы для сбора ваших инсайтов.`,
-    getMainMenu()
-  );
+  const activeSession = await db.getActiveSession();
+  if (activeSession) {
+    await db.updateUserPendingSession(tgId, activeSession.session_id);
+    await ctx.reply(
+      `👋 Приветствую в боте конференции Meta-Harness!\n\n📢 Сейчас идёт сбор инсайтов по сессии *"${activeSession.title}"*. Отправьте свой ответ прямо сейчас!`,
+      getMainMenu()
+    );
+  } else {
+    await ctx.reply(
+      `👋 Приветствую в боте конференции Meta-Harness!\n\nИспользуйте меню ниже для навигации. Во время докладов вы будете получать пуш-опросы для сбора ваших инсайтов.`,
+      getMainMenu()
+    );
+  }
 });
 
 bot.action('program', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-  } catch (e) {}
+  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
   await ctx.reply(PROGRAM_INTRO, { parse_mode: 'Markdown', ...getProgramMenu() });
 });
 
 bot.action('program_d1', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-  } catch (e) {}
+  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
   await ctx.reply(PROGRAM_DAY1, { parse_mode: 'Markdown', ...getProgramMenu() });
 });
 
 bot.action('program_d2', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-  } catch (e) {}
+  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
   await ctx.reply(PROGRAM_DAY2, { parse_mode: 'Markdown', ...getProgramMenu() });
 });
 
 bot.action('speakers', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-  } catch (e) {}
+  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
   await ctx.reply(SPEAKERS_TEXT, { 
     parse_mode: 'Markdown', 
     reply_markup: {
@@ -153,14 +162,14 @@ bot.action('speakers', async (ctx) => {
 bot.action('main_menu', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-  } catch (e) {}
+  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
   await ctx.reply('👋 Главное меню бота конференции Meta-Harness:', getMainMenu());
 });
 
 bot.action('notebook', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-  } catch (e) {}
+  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
   
   const tgId = ctx.from.id;
   await registerUser(tgId, ctx.from.username || 'Anonymous');
@@ -250,7 +259,12 @@ You MUST respond with a JSON object:
         throw new Error('Empty response from Gemini API');
       }
 
-      return JSON.parse(responseText.trim());
+      let cleaned = responseText.trim();
+      const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        cleaned = jsonMatch[1].trim();
+      }
+      return JSON.parse(cleaned);
     } catch (error) {
       const status = error.response?.status;
       if (status === 429 && i < retries - 1) {
@@ -294,7 +308,11 @@ bot.on('text', async (ctx) => {
 
   if (!session) {
     console.error('Session not found:', sessionId);
-    return ctx.reply('Произошла ошибка при определении активной сессии.');
+    await db.updateUserPendingSession(tgId, null);
+    return ctx.reply(
+      'Сессия, на которую вы отвечали, уже завершена. Дождитесь следующего опроса.',
+      getMainMenu()
+    );
   }
 
   const sessionTitle = session.title;
@@ -318,11 +336,8 @@ bot.on('text', async (ctx) => {
 
       await db.updateUserNotebook(tgId, newText);
 
-      // c) Reset user pending state
-      await db.updateUserPendingSession(tgId, null);
-
       await ctx.reply(
-        `✅ *Инсайт принят и записан в ваш блокнот!*\n\n📝 *Отформатированный инсайт:*\n"${cleanInsight}"`,
+        `✅ *Инсайт принят и записан в ваш блокнот!*\n\n📝 *Отформатированный инсайт:*\n"${cleanInsight}"\n\n💡 Отправьте ещё инсайт или нажмите кнопку меню для навигации.`,
         { parse_mode: 'Markdown', ...getMainMenu() }
       );
 

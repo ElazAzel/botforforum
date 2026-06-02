@@ -1,14 +1,32 @@
-// Простое in-memory хранилище.
-// Данные хранятся в оперативной памяти серверлесс-функции.
-// На Vercel данные сохраняются пока функция "тёплая" (обычно 5-15 минут между запросами).
-// Для конференции длительностью 1-2 дня с активным трафиком — этого достаточно.
+const fs = require('fs');
+const path = require('path');
 
-const store = {
-  users: {},
-  sessions: {},
-  user_notes: {},
-  user_notebooks: {}
-};
+const DB_PATH = path.join(__dirname, '..', 'db.json');
+
+function loadFromFile() {
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      const data = fs.readFileSync(DB_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (parsed.users && parsed.sessions && parsed.user_notes && parsed.user_notebooks) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('db.json load failed, using fresh store:', err.message);
+  }
+  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {} };
+}
+
+function saveToFile() {
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(store, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('db.json save failed (read-only fs?):', err.message);
+  }
+}
+
+let store = loadFromFile();
 
 // --- ПОЛЬЗОВАТЕЛИ ---
 async function getUser(tgId) {
@@ -24,6 +42,7 @@ async function saveUser(tgId, username) {
       pending_session_id: null,
       created_at: new Date().toISOString()
     };
+    saveToFile();
   }
   return store.users[key];
 }
@@ -32,6 +51,7 @@ async function updateUserPendingSession(tgId, sessionId) {
   const key = String(tgId);
   if (store.users[key]) {
     store.users[key].pending_session_id = sessionId;
+    saveToFile();
     return true;
   }
   return false;
@@ -41,6 +61,12 @@ async function updateAllUsersPendingSession(sessionId) {
   Object.keys(store.users).forEach(id => {
     store.users[id].pending_session_id = sessionId;
   });
+  saveToFile();
+}
+
+async function getActiveSession() {
+  const sessions = Object.values(store.sessions);
+  return sessions.find(s => s.is_active) || null;
 }
 
 // --- СЕССИИ ---
@@ -69,6 +95,7 @@ async function saveSession(sessionId, title, isActive = false) {
     });
   }
 
+  saveToFile();
   return session;
 }
 
@@ -83,6 +110,7 @@ async function addInsight(tgId, sessionId, rawInsight) {
   };
   if (!store.user_notes[sessionId]) store.user_notes[sessionId] = [];
   store.user_notes[sessionId].push(newNote);
+  saveToFile();
   return newNote;
 }
 
@@ -97,6 +125,7 @@ async function getUserNotebook(tgId) {
 
 async function updateUserNotebook(tgId, text) {
   store.user_notebooks[String(tgId)] = text;
+  saveToFile();
 }
 
 // --- УТИЛИТЫ ---
@@ -109,6 +138,7 @@ module.exports = {
   saveUser,
   updateUserPendingSession,
   updateAllUsersPendingSession,
+  getActiveSession,
   getSession,
   saveSession,
   addInsight,
