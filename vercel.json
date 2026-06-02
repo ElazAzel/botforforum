@@ -10,6 +10,7 @@
     { "src": "/api/webhook", "dest": "/api/webhook.js" },
     { "src": "/api/push-poll", "dest": "/api/push-poll.js" },
     { "src": "/api/analytics", "dest": "/api/analytics.js" },
-    { "src": "/api/setup", "dest": "/api/setup.js" }
+    { "src": "/api/setup", "dest": "/api/setup.js" },
+    { "src": "/", "dest": "/public/index.html" }
   ]
 }
