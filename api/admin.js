@@ -182,6 +182,64 @@ module.exports = async (req, res) => {
       const deleted = await db.deleteButton(button_id);
       return res.json({ success: true, deleted });
 
+    } else if (action === 'diagnose') {
+      let botInfo = null;
+      let botError = null;
+      try {
+        botInfo = await telegram.getMe();
+      } catch (err) {
+        botError = err.message;
+      }
+      
+      const dbUsers = await db.getAllUsers();
+      const dbSessions = await db.getAllSessions();
+      const dbInsights = await db.getAllInsightsRaw();
+
+      let blobStatus = 'Disconnected';
+      let blobFiles = [];
+      let blobError = null;
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        blobStatus = 'Connected';
+        try {
+          const blobModule = require('@vercel/blob');
+          const { blobs } = await blobModule.list();
+          blobFiles = blobs.map(b => ({ pathname: b.pathname, size: b.size, url: b.url }));
+        } catch (err) {
+          blobError = err.message;
+        }
+      }
+
+      return res.json({
+        success: true,
+        bot: {
+          token_configured: !!process.env.TELEGRAM_BOT_TOKEN,
+          info: botInfo,
+          error: botError
+        },
+        database: {
+          users_count: dbUsers.length,
+          sessions_count: dbSessions.length,
+          insights_count: dbInsights.length,
+          users_list: dbUsers.map(u => ({ tg_id: u.tg_id, username: u.username, created_at: u.created_at }))
+        },
+        blob: {
+          status: blobStatus,
+          files: blobFiles,
+          error: blobError
+        }
+      });
+
+    } else if (action === 'test_send') {
+      const { target_tg_id, test_message } = params;
+      if (!target_tg_id) return res.status(400).json({ error: 'target_tg_id required' });
+      const msgText = test_message || 'Тестовое сообщение от панели администратора бота MBA AlmaU Impact Forum.';
+      try {
+        await telegram.sendMessage(target_tg_id, msgText);
+        return res.json({ success: true, message: 'Test message sent successfully!' });
+      } catch (err) {
+        return res.json({ success: false, error: err.message });
+      }
+
     } else {
       return res.status(400).json({ error: `Unknown action: ${action}` });
     }

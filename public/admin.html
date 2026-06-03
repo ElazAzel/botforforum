@@ -383,6 +383,31 @@
       <div id="sessions"><div class="empty">Нажмите «Войти»</div></div>
     </div>
 
+    <div class="card">
+      <h2>🛠 Инструменты диагностики</h2>
+      <p style="font-size: 13px; color: #94a3b8; margin-bottom: 12px;">Проверьте подключение базы данных, настройки токена бота и протестируйте отправку сообщения.</p>
+      <button class="btn btn-sm btn-purple" style="margin-bottom:15px;" onclick="runDiagnostics()">🔍 Запустить диагностику</button>
+      
+      <div id="diagnostics_result" class="hidden" style="background:#0f172a; border-radius:8px; padding:15px; border:1px solid #334155; margin-bottom:15px;">
+        <pre id="diagnostics_pre" style="white-space:pre-wrap; font-family:monospace; font-size:12px; color:#cbd5e1; max-height:300px; overflow-y:auto;"></pre>
+      </div>
+      
+      <div style="background:#0f172a; border-radius:8px; padding:15px; border:1px solid #334155; margin-top: 10px;">
+        <h3 style="font-size:13px; color:#38bdf8; margin-bottom:10px;">Тест отправки сообщения:</h3>
+        <div class="row">
+          <div>
+            <label>Telegram ID получателя</label>
+            <input id="test_tg_id" placeholder="например, 123456789">
+          </div>
+          <div>
+            <label>Текст сообщения</label>
+            <input id="test_message_text" value="Тестовое сообщение от панели администратора бота MBA AlmaU Impact Forum.">
+          </div>
+        </div>
+        <button class="btn btn-sm btn-green" id="test_send_btn" onclick="sendTestMessage()">⚡ Отправить тестовое сообщение</button>
+      </div>
+    </div>
+
     <div id="insights_block" class="hidden">
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:12px; flex-wrap:wrap; gap:6px">
@@ -833,6 +858,37 @@ async function deleteButton(id) {
   }
 }
 
+async function runDiagnostics() {
+  const pre = document.getElementById('diagnostics_pre');
+  const block = document.getElementById('diagnostics_result');
+  block.classList.remove('hidden');
+  pre.textContent = '⏳ Выполняется диагностика систем...';
+  try {
+    const d = await api('diagnose');
+    pre.textContent = JSON.stringify(d, null, 2);
+  } catch (e) {
+    pre.textContent = '❌ Ошибка выполнения диагностики: ' + e.message;
+  }
+}
+
+async function sendTestMessage() {
+  const tgId = document.getElementById('test_tg_id').value.trim();
+  const msgText = document.getElementById('test_message_text').value.trim();
+  if (!tgId) return alert('Введите Telegram ID получателя');
+  setLoading('test_send_btn', true, 'Отправка...');
+  try {
+    const d = await apiPost({ action: 'test_send', target_tg_id: tgId, test_message: msgText });
+    if (d.success) {
+      alert('✅ Успешно отправлено!');
+    } else {
+      alert('❌ Ошибка отправки: ' + (d.error || 'неизвестная ошибка'));
+    }
+  } catch (e) {
+    alert('❌ Ошибка: ' + e.message);
+  }
+  setLoading('test_send_btn', false, '⚡ Отправить тестовое сообщение');
+}
+
 // Auto-setup webhook on admin load
 fetch('/api/setup')
   .then(res => res.json().catch(() => ({ ok: false })))
@@ -844,9 +900,11 @@ fetch('/api/setup')
       el.style.background = '#064e3b';
       el.style.borderColor = '#064e3b';
     } else {
-      el.innerHTML = '⚠️ ошибка';
+      el.innerHTML = '⚠️ ошибка: ' + (data.error || 'не удалось настроить');
       el.style.color = '#fca5a5';
       el.style.background = '#7f1d1d';
+      el.style.borderColor = '#7f1d1d';
+      console.error('Webhook auto-setup failed:', data.error);
     }
   })
   .catch(err => {
@@ -854,6 +912,8 @@ fetch('/api/setup')
     el.innerHTML = '⚠️ ошибка';
     el.style.color = '#fca5a5';
     el.style.background = '#7f1d1d';
+    el.style.borderColor = '#7f1d1d';
+    console.error('Webhook setup fetch error:', err);
   });
 </script>
 </body>
