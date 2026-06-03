@@ -220,7 +220,8 @@ async function save() {
         await blobModule.put(BLOB_KEY, data, {
           contentType: 'application/json',
           access: 'private',
-          addRandomSuffix: false
+          addRandomSuffix: false,
+          allowOverwrite: true
         });
         
         loadedVersion = store.version;
