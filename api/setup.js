@@ -12,14 +12,28 @@ module.exports = async (req, res) => {
   const webhookUrl = `${protocol}://${host}/api/webhook`;
 
   try {
-    const secretToken = process.env.TELEGRAM_SECRET_TOKEN || 'mba_almau_forum_secret_token_2026';
-    const response = await axios.post(
-      `https://api.telegram.org/bot${token}/setWebhook`,
-      { 
-        url: webhookUrl,
-        secret_token: secretToken
-      }
-    );
+    // 1. Check existing webhook configuration
+    const infoResponse = await axios.get(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const currentUrl = infoResponse.data?.result?.url;
+
+    let webhookOk = false;
+    let description = '';
+
+    if (currentUrl === webhookUrl) {
+      webhookOk = true;
+      description = 'Webhook is already correctly configured';
+    } else {
+      const secretToken = process.env.TELEGRAM_SECRET_TOKEN || 'mba_almau_forum_secret_token_2026';
+      const response = await axios.post(
+        `https://api.telegram.org/bot${token}/setWebhook`,
+        { 
+          url: webhookUrl,
+          secret_token: secretToken
+        }
+      );
+      webhookOk = !!response.data?.ok;
+      description = response.data?.description || '';
+    }
 
     try {
       await axios.post(
@@ -38,11 +52,10 @@ module.exports = async (req, res) => {
       console.warn('Failed to set Telegram commands:', cmdErr.message);
     }
 
-    const result = response.data;
-    if (result.ok) {
-      return res.status(200).json({ ok: true, success: true, message: 'Вебхук успешно установлен!', url: webhookUrl });
+    if (webhookOk) {
+      return res.status(200).json({ ok: true, success: true, message: 'Вебхук успешно проверен/установлен!', url: webhookUrl });
     } else {
-      return res.status(200).json({ ok: false, success: false, error: result.description || 'Неизвестная ошибка Telegram API' });
+      return res.status(200).json({ ok: false, success: false, error: description || 'Неизвестная ошибка Telegram API' });
     }
   } catch (err) {
     console.error('Setup error:', err.message);
