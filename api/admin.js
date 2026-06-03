@@ -97,14 +97,30 @@ module.exports = async (req, res) => {
       if (!notes || notes.length === 0) {
         return res.status(404).json({ error: 'No insights' });
       }
-      const data = await Promise.all(notes.map(async (n, i) => {
+       const data = await Promise.all(notes.map(async (n, i) => {
         const u = await db.getUserById(n.tg_id);
         return { '№': i + 1, 'Telegram ID': n.tg_id, 'Username': u ? u.username : 'Anonymous', 'Инсайт': n.raw_insight, 'Время': new Date(n.timestamp).toISOString() };
       }));
       const ws = xlsx.utils.json_to_sheet(data);
       const wb = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(wb, ws, 'Инсайты');
-      ws['!cols'] = [{ wch: 5 }, { wch: 15 }, { wch: 20 }, { wch: 60 }, { wch: 25 }];
+
+      // Auto-fit column widths based on cell content
+      const colWidths = [5, 15, 15, 40, 20];
+      data.forEach(row => {
+        const keys = Object.keys(row);
+        keys.forEach((k, idx) => {
+          const val = String(row[k] || '');
+          if (val.length + 3 > colWidths[idx]) colWidths[idx] = val.length + 3;
+        });
+      });
+      if (colWidths[3] > 80) colWidths[3] = 80;
+      ws['!cols'] = colWidths.map(w => ({ wch: w }));
+
+      // Force gridlines visibility
+      if (!ws['!views']) ws['!views'] = [];
+      ws['!views'][0] = { showGridLines: true };
+
       const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="report_${session_id}.xlsx"`);

@@ -129,14 +129,21 @@ module.exports = async (req, res) => {
       const workbook = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(workbook, worksheet, 'Инсайты');
 
-      // Настройка ширины колонок
-      worksheet['!cols'] = [
-        { wch: 5 },   // №
-        { wch: 15 },  // Telegram ID
-        { wch: 20 },  // Username
-        { wch: 60 },  // Insight
-        { wch: 25 }   // Time
-      ];
+      // Auto-fit column widths based on cell content
+      const colWidths = [5, 15, 20, 40, 25];
+      formattedData.forEach(row => {
+        const keys = Object.keys(row);
+        keys.forEach((k, idx) => {
+          const val = String(row[k] || '');
+          if (val.length + 3 > colWidths[idx]) colWidths[idx] = val.length + 3;
+        });
+      });
+      if (colWidths[3] > 80) colWidths[3] = 80;
+      worksheet['!cols'] = colWidths.map(w => ({ wch: w }));
+
+      // Force gridlines visibility
+      if (!worksheet['!views']) worksheet['!views'] = [];
+      worksheet['!views'][0] = { showGridLines: true };
 
       const excelBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 

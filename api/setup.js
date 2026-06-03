@@ -14,9 +14,13 @@ module.exports = async (req, res) => {
 
   try {
     // Устанавливаем вебхук в Telegram
+    const secretToken = process.env.TELEGRAM_SECRET_TOKEN || 'mba_almau_forum_secret_token_2026';
     const response = await axios.post(
       `https://api.telegram.org/bot${token}/setWebhook`,
-      { url: webhookUrl }
+      { 
+        url: webhookUrl,
+        secret_token: secretToken
+      }
     );
 
     // Устанавливаем меню команд в Telegram

@@ -10,27 +10,119 @@ if (process.env.BLOB_READ_WRITE_TOKEN) {
 }
 
 function freshStore() {
-  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {}, buttons: [] };
+  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {}, buttons: [], version: 0 };
 }
 
 let store = freshStore();
+let loadedVersion = 0;
 
 // On Vercel (serverless), we must reload from Blob on EVERY invocation
 // because the in-memory store may be stale or from a cold start.
 // We track whether the store has been loaded for THIS invocation.
 let loadedForThisInvocation = false;
 
+// Helper to merge local modifications with remote modifications to prevent data loss
+function mergeStores(local, remote) {
+  const merged = freshStore();
+  
+  // Merge users
+  Object.assign(merged.users, remote.users, local.users);
+  
+  // Merge sessions
+  Object.assign(merged.sessions, remote.sessions, local.sessions);
+  
+  // Merge user_notebooks (deduplicate paragraphs/insights)
+  const allNotebookUserIds = new Set([...Object.keys(remote.user_notebooks || {}), ...Object.keys(local.user_notebooks || {})]);
+  allNotebookUserIds.forEach(uid => {
+    const remoteNb = remote.user_notebooks[uid] || '';
+    const localNb = local.user_notebooks[uid] || '';
+    
+    if (remoteNb && localNb && remoteNb !== localNb) {
+      const remoteInsights = remoteNb.split('\n\n').map(s => s.trim()).filter(Boolean);
+      const localInsights = localNb.split('\n\n').map(s => s.trim()).filter(Boolean);
+      
+      const combined = [...remoteInsights];
+      localInsights.forEach(li => {
+        if (!combined.includes(li)) {
+          combined.push(li);
+        }
+      });
+      merged.user_notebooks[uid] = combined.join('\n\n');
+    } else {
+      merged.user_notebooks[uid] = localNb || remoteNb || '';
+    }
+  });
+  
+  // Merge user_notes (session insights arrays)
+  const allSessionIds = new Set([...Object.keys(remote.user_notes || {}), ...Object.keys(local.user_notes || {})]);
+  allSessionIds.forEach(sid => {
+    const remoteNotes = remote.user_notes[sid] || [];
+    const localNotes = local.user_notes[sid] || [];
+    
+    const combined = [];
+    const seenIds = new Set();
+    [...remoteNotes, ...localNotes].forEach(note => {
+      if (note && note.id) {
+        if (!seenIds.has(note.id)) {
+          seenIds.add(note.id);
+          combined.push(note);
+        }
+      }
+    });
+    merged.user_notes[sid] = combined;
+  });
+  
+  // Merge categorized_notes
+  const allUserIds = new Set([...Object.keys(remote.categorized_notes || {}), ...Object.keys(local.categorized_notes || {})]);
+  allUserIds.forEach(uid => {
+    const remoteCat = remote.categorized_notes[uid] || { speakers: {}, general: [] };
+    const localCat = local.categorized_notes[uid] || { speakers: {}, general: [] };
+    
+    const speakers = {};
+    const allSpeakers = new Set([...Object.keys(remoteCat.speakers || {}), ...Object.keys(localCat.speakers || {})]);
+    allSpeakers.forEach(spk => {
+      const remoteSpkNotes = remoteCat.speakers[spk] || [];
+      const localSpkNotes = localCat.speakers[spk] || [];
+      const combined = [...remoteSpkNotes];
+      localSpkNotes.forEach(ln => {
+        if (!combined.some(rn => rn.text === ln.text && rn.timestamp === ln.timestamp)) {
+          combined.push(ln);
+        }
+      });
+      speakers[spk] = combined;
+    });
+    
+    const general = [...(remoteCat.general || [])];
+    (localCat.general || []).forEach(ln => {
+      if (!general.some(rn => rn.text === ln.text && rn.timestamp === ln.timestamp)) {
+        general.push(ln);
+      }
+    });
+    
+    merged.categorized_notes[uid] = { speakers, general };
+  });
+  
+  // Merge buttons
+  const buttonsMap = {};
+  (remote.buttons || []).forEach(b => { buttonsMap[b.id] = b; });
+  (local.buttons || []).forEach(b => { buttonsMap[b.id] = b; });
+  merged.buttons = Object.values(buttonsMap);
+  
+  // Remote version incremented by 1
+  merged.version = (remote.version || 0) + 1;
+  
+  return merged;
+}
+
 async function loadFromBlob() {
   if (!blobModule) return false;
   try {
-    // Use list() to find the blob by prefix, then fetch its content
     const { blobs } = await blobModule.list({ prefix: BLOB_KEY, limit: 1 });
     if (!blobs || blobs.length === 0) {
       console.log('No blob found with key:', BLOB_KEY);
       return false;
     }
     const blobUrl = blobs[0].url;
-    // Fetch the blob content using its URL
     const response = await fetch(blobUrl);
     if (!response.ok) {
       console.warn('Failed to fetch blob:', response.status);
@@ -39,7 +131,6 @@ async function loadFromBlob() {
     const text = await response.text();
     const parsed = JSON.parse(text);
     if (parsed.users && parsed.sessions) {
-      // Reset store to fresh then merge, ensuring all keys exist
       store = freshStore();
       Object.keys(parsed).forEach(k => {
         if (store[k] !== undefined && typeof parsed[k] === 'object' && !Array.isArray(parsed[k])) {
@@ -48,25 +139,12 @@ async function loadFromBlob() {
           store[k] = parsed[k];
         }
       });
+      loadedVersion = store.version || 0;
     }
     return true;
   } catch (err) {
     console.warn('loadFromBlob failed:', err.message);
     return false;
-  }
-}
-
-async function saveToBlob() {
-  if (!blobModule) return;
-  try {
-    const data = JSON.stringify(store, null, 2);
-    await blobModule.put(BLOB_KEY, data, {
-      contentType: 'application/json',
-      access: 'public',
-      addRandomSuffix: false
-    });
-  } catch (err) {
-    console.warn('saveToBlob failed:', err.message);
   }
 }
 
@@ -85,6 +163,7 @@ function loadFromFile() {
             store[k] = p[k];
           }
         });
+        loadedVersion = store.version || 0;
       }
     }
   } catch (e) {
@@ -101,10 +180,55 @@ function saveToFile() {
   }
 }
 
-// Unified save: saves to both file and blob
+// Unified save with version checks and write retry loops
 async function save() {
+  if (blobModule) {
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        const { blobs } = await blobModule.list({ prefix: BLOB_KEY, limit: 1 });
+        if (blobs && blobs.length > 0) {
+          const blobUrl = blobs[0].url;
+          const response = await fetch(blobUrl);
+          if (response.ok) {
+            const text = await response.text();
+            const remoteStore = JSON.parse(text);
+            const remoteVersion = remoteStore.version || 0;
+            
+            if (remoteVersion !== loadedVersion) {
+              console.log(`Version conflict! Loaded: ${loadedVersion}, Remote: ${remoteVersion}. Merging...`);
+              store = mergeStores(store, remoteStore);
+            } else {
+              store.version = loadedVersion + 1;
+            }
+          }
+        } else {
+          store.version = 1;
+        }
+        
+        // Write updated state to Blob
+        const data = JSON.stringify(store, null, 2);
+        await blobModule.put(BLOB_KEY, data, {
+          contentType: 'application/json',
+          access: 'public',
+          addRandomSuffix: false
+        });
+        
+        loadedVersion = store.version;
+        break; // Success!
+      } catch (err) {
+        retries--;
+        console.warn(`Vercel Blob save attempt failed (retries left: ${retries}):`, err.message);
+        if (retries === 0) {
+          saveToFile();
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    }
+  }
+  
   saveToFile();
-  await saveToBlob();
 }
 
 // Ensure data is loaded before any operation.
@@ -416,5 +540,6 @@ module.exports = {
   getAllUsers,
   getButtons,
   saveButton,
-  deleteButton
+  deleteButton,
+  mergeStores
 };

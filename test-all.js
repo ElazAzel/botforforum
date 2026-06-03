@@ -387,6 +387,73 @@ async function runTests() {
   assert(!!process.env.ADMIN_PASSWORD, 'ADMIN_PASSWORD установлен');
 
   // ═══════════════════════════════════════
+  // 15. CONCURRENCY & MERGE STORES (CRDT MERGING)
+  // ═══════════════════════════════════════
+  console.log('\n🔄 15. Конкурентная запись и слияние');
+
+  // Create mock databases representing concurrent writes
+  const initialStore = {
+    users: {
+      "111111": { tg_id: 111111, username: "User1", pending_session_id: null, pending_note: null }
+    },
+    sessions: {},
+    user_notes: {},
+    user_notebooks: {
+      "111111": "- Initial insight"
+    },
+    categorized_notes: {
+      "111111": {
+        speakers: { "Павел Лукша": [{ text: "First note", timestamp: 1717416000000 }] },
+        general: [{ text: "General first", timestamp: 1717416000000 }]
+      }
+    },
+    buttons: [],
+    version: 1
+  };
+
+  // Local state change (User 1 adds speaker note for Pavel Luksha and updates notebook text)
+  const localStore = JSON.parse(JSON.stringify(initialStore));
+  localStore.categorized_notes["111111"].speakers["Павел Лукша"].push({
+    text: "Local new speaker note",
+    timestamp: 1717416005000
+  });
+  localStore.user_notebooks["111111"] += "\n\n- Local new insight";
+  localStore.version = 2;
+
+  // Remote state change (concurrent write by another client: User 1 adds general note and a note for another speaker)
+  const remoteStore = JSON.parse(JSON.stringify(initialStore));
+  remoteStore.categorized_notes["111111"].general.push({
+    text: "Remote new general note",
+    timestamp: 1717416008000
+  });
+  remoteStore.categorized_notes["111111"].speakers["Тарик Курейши"] = [{
+    text: "Remote speaker note",
+    timestamp: 1717416009000
+  }];
+  remoteStore.user_notebooks["111111"] += "\n\n- Remote new insight";
+  remoteStore.version = 2;
+
+  // Perform CRDT merge
+  const merged = db.mergeStores(localStore, remoteStore);
+
+  assert(merged.version === 3, 'mergeStores — инкрементирует версию удаленной бд на 1 (версия: 3)');
+  
+  const mergedLuks = merged.categorized_notes["111111"].speakers["Павел Лукша"];
+  assert(mergedLuks.length === 2, 'mergeStores — сохраняет локально добавленную заметку спикера');
+  assert(mergedLuks.some(n => n.text === "Local new speaker note"), 'mergeStores — содержит "Local new speaker note"');
+
+  const mergedTarik = merged.categorized_notes["111111"].speakers["Тарик Курейши"];
+  assert(mergedTarik && mergedTarik.length === 1, 'mergeStores — сохраняет удаленно добавленного спикера');
+  assert(mergedTarik[0].text === "Remote speaker note", 'mergeStores — содержит "Remote speaker note"');
+
+  const mergedGen = merged.categorized_notes["111111"].general;
+  assert(mergedGen.length === 2, 'mergeStores — сохраняет удаленно добавленную общую заметку');
+  assert(mergedGen.some(n => n.text === "Remote new general note"), 'mergeStores — содержит "Remote new general note"');
+
+  const mergedNotebook = merged.user_notebooks["111111"];
+  assert(mergedNotebook.includes("Local new insight") && mergedNotebook.includes("Remote new insight"), 'mergeStores — объединяет тексты блокнота без перезаписи');
+
+  // ═══════════════════════════════════════
   // RESULTS
   // ═══════════════════════════════════════
   console.log('\n══════════════════════════════════════════');

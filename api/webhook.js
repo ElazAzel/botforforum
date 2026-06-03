@@ -3,203 +3,32 @@ const { Telegraf } = require('telegraf');
 const axios = require('axios');
 const db = require('./db');
 
+const {
+  PROGRAM_INTRO
+} = require('./bot/config');
+
+const {
+  registerUser,
+  evaluateInsight
+} = require('./bot/utils');
+
+const {
+  renderMenuKeyboard,
+  getMainMenu,
+  getNotebookMenu
+} = require('./bot/keyboards');
+
+// Import sub-routers
+const registerScheduleHandlers = require('./bot/schedule');
+const registerSpeakerHandlers = require('./bot/speakers');
+const registerNotebookHandlers = require('./bot/notebook');
+
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// Static data: Program Schedule info
-const PROGRAM_INTRO = `🎓 *MBA AlmaU Impact Forum*
-
-В этом году программа MBA Высшей Школы Бизнеса AlmaU отмечает своё 30-летие. В честь этого события приглашаем вас стать частью MBA AlmaU Impact Forum – двухдневного форума о лидерстве в эпоху неопределенности, управленческом импакте и роли бизнес-образования.
-
-Выберите интересующий день форума ниже:`;
-
-const PROGRAM_DAY1 = `📅 *MBA AlmaU Impact Forum — ДЕНЬ 1 (4 июня)*
-
-• *09:00 – 10:00* | *Регистрация*
-• *10:00 – 10:30* | *Открытие форума*
-  🗣 Асылбек Кожахметов (Президент AlmaU), Тимур Булдыбаев (Ректор AlmaU), Ксения Южанинова-Караденизли (Декан ВШБ AlmaU)
-• *10:45 – 11:45* | *Форсайт-лекция: «Следующие 20 лет: как подготовить бизнес к решающему переходу человечества»*
-  🗣 *Павел Лукша* (международный эксперт по трендам)
-• *11:45 – 12:15* | *Rave Network & Coffee Break*
-• *12:15 – 13:30* | *Панельная дискуссия: «Условия тотальной неопределённости: как не просто выжить, а вырасти?»*
-  🗣 *Н. Джарбасов, К. Боранбаев, В. Торгунакова, З. Хашимов*. Модератор: *Дана Токмурзина*
-• *13:30 – 14:00* | *Lunch Break*
-• *14:00 – 15:15* | *Keynote-сессия: «Leading from the future»*
-  🗣 *Тарик Курейши* (CEO Future Readiness Forum & Xponential Group)
-• *15:15 – 15:30* | *Break*
-• *15:30 – 17:00* | *Воркшоп: «From Inner Stability to Outer Impact: как состояние лидера формирует масштаб его влияния»*
-  🗣 *Ильдар Валиуллов* (MBA AlmaU Alumni)`;
-
-const PROGRAM_DAY2 = `📅 *MBA AlmaU Impact Forum — ДЕНЬ 2 (5 июня)*
-
-• *09:00 – 10:00* | *Регистрация*
-• *10:00 – 11:00* | *Воркшоп: «Искусство договорённости: Переговоры сквозь призму поведенческих наук»*
-  🗣 *Мухит Елеуов* (Выпускник Harvard Kennedy School, ADL Disputes)
-• *11:00 – 11:30* | *Coffee Break & Network*
-• *11:30 – 13:00* | *Параллельные сессии:*
-  1️⃣ *Showcase-дискуссия: «Герои Impact Driven Education»*
-     🗣 *К. Исмагулов, Б. Сыздыкова, Б. Култаев, А. Ержанова, М. Ахметсадыков*. Модератор: *Данияр Медетов*
-  2️⃣ *Speed Dating: «Менторинг для управленцев»* (по предварительной регистрации)
-     🗣 *Озат Байсеркеев, Ирина Уражанова, Мадина Билялова, Ильдар Тапалов*
-• *13:00 – 13:30* | *Lunch & Network*
-• *13:30 – 14:30* | *Параллельные сессии:*
-  1️⃣ *Воркшоп: «Центральная Азия: окно возможностей для нового поколения»*
-     🗣 *Мират Ахметсадыков* (MOST)
-  2️⃣ *Воркшоп: «Неправильный трудовой договор»*
-     🗣 *Татьяна Иссык*
-• *14:30 – 14:45* | *Break*
-• *14:45 – 15:45* | *Vision Talk: «Beyond Growth: как создавать ценность в мире, где меняются правила игры»*
-  🗣 *Ильдар Валиуллов* (MBA AlmaU Alumni)`;
-
-// Static data: Speaker Biographies
-const SPEAKERS_TEXT = `🎤 *Ключевые спикеры MBA AlmaU Impact Forum:*
-
-• *Павел Лукша* — международный эксперт по образовательным и технологическим трендам, соавтор исследований будущего.
-• *Тарик Курейши* — CEO Future Readiness Forum и Xponential Group, экс-советник Bloomberg Media.
-• *Ильдар Валиуллов* — эксперт в сфере развития людей и сопровождения лидеров, MBA AlmaU Alumni.
-• *Мухит Елеуов* — Выпускник Harvard Kennedy School, партнер ADL Disputes.
-• *Мират Ахметсадыков* — со-основатель венчурного фонда MOST, MBA AlmaU Alumni.
-• *Татьяна Иссык* — профессиональный юрист, эксперт по трудовому праву.
-• *Зафар Хашимов* — основатель сети супермаркетов «Корзинка» (Узбекистан).
-• *Кайрат Боранбаев* — учредитель Холдинга «АЛМАЛЫ», Президент ФК «Кайрат».
-• *Виктория Торгунакова* — CEO Freedom Events.
-• *Нурасыл Джарбасов* — председатель совета директоров DEM Group, основатель Astana Venture Club.`;
-
-const SPEAKER_NAMES = [
-  'Павел Лукша', 'Тарик Курейши', 'Ильдар Валиуллов',
-  'Мухит Елеуов', 'Мират Ахметсадыков', 'Татьяна Иссык',
-  'Зафар Хашимов', 'Кайрат Боранбаев', 'Виктория Торгунакова', 'Нурасыл Джарбасов'
-];
-
-// Keyboards
-const renderMenuKeyboard = async (tgId, parentId = 'main') => {
-  try {
-    const buttons = await db.getButtons();
-    
-    // Filter and sort buttons for this parent
-    const levelButtons = buttons.filter(b => b.parentId === parentId);
-    
-    // Group by row
-    const rowsMap = {};
-    levelButtons.forEach(b => {
-      const r = b.row !== undefined ? b.row : 0;
-      if (!rowsMap[r]) rowsMap[r] = [];
-      
-      // Map to Telegram inline keyboard format
-      const tb = { text: b.text };
-      if (b.type === 'url') {
-        tb.url = b.url;
-      } else if (b.type === 'system') {
-        tb.callback_data = b.content; // e.g. 'nb'
-      } else {
-        // submenu or text button
-        tb.callback_data = 'menu_open_' + b.id;
-      }
-      rowsMap[r].push(tb);
-    });
-    
-    // Sort rows and compile inline keyboard
-    const inline_keyboard = [];
-    const sortedRowKeys = Object.keys(rowsMap).sort((a, b) => Number(a) - Number(b));
-    sortedRowKeys.forEach(r => {
-      inline_keyboard.push(rowsMap[r]);
-    });
-    
-    // Append back button if we are not at the main menu
-    if (parentId !== 'main') {
-      const currentParentBtn = buttons.find(b => b.id === parentId);
-      let backCallback = 'main_menu';
-      if (currentParentBtn && currentParentBtn.parentId !== 'main') {
-        backCallback = 'menu_open_' + currentParentBtn.parentId;
-      }
-      inline_keyboard.push([{ text: '⬅️ Назад', callback_data: backCallback }]);
-    }
-    
-    return { reply_markup: { inline_keyboard } };
-  } catch (err) {
-    console.error('Error rendering menu keyboard:', err);
-    // Safe fallback static menu
-    return {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '📅 Программа', callback_data: 'program' }, { text: '🎤 Спикеры', callback_data: 'speakers' }],
-          [{ text: '📓 Мой блокнот', callback_data: 'nb' }]
-        ]
-      }
-    };
-  }
-};
-
-const getMainMenu = async (tgId) => {
-  return await renderMenuKeyboard(tgId, 'main');
-};
-
-const getProgramMenu = () => {
-  return {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: '📅 День 1 (4 июня)', callback_data: 'program_d1' },
-          { text: '📅 День 2 (5 июня)', callback_data: 'program_d2' }
-        ],
-        [
-          { text: '⬅️ Главное меню', callback_data: 'main_menu' }
-        ]
-      ]
-    }
-  };
-};
-
-const getNotebookMenu = async (tgId) => {
-  let speakerCount = 0;
-  let generalCount = 0;
-  let totalCount = 0;
-  if (tgId) {
-    try {
-      const categorized = await db.getCategorizedNotes(tgId);
-      speakerCount = Object.values(categorized.speakers).reduce((sum, list) => sum + list.length, 0);
-      generalCount = categorized.general.length;
-      
-      const legacyNotebook = await db.getUserNotebook(tgId);
-      const hasInsights = legacyNotebook && legacyNotebook.trim() ? 1 : 0;
-      const insightCount = hasInsights ? legacyNotebook.split('\n\n').filter(Boolean).length : 0;
-      totalCount = speakerCount + generalCount + insightCount;
-    } catch (e) {
-      console.error('Error fetching notebook stats for menu:', e.message);
-    }
-  }
-
-  return {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '📝 Добавить заметку по спикеру', callback_data: 'nb_sp' }],
-        [{ text: '📝 Общая заметка', callback_data: 'nb_gn' }],
-        [{ text: `📖 По спикерам (${speakerCount})`, callback_data: 'nb_vsp' }],
-        [{ text: `📖 Общие заметки (${generalCount})`, callback_data: 'nb_vgn' }],
-        [{ text: `📖 Весь блокнот (${totalCount})`, callback_data: 'nb_all' }],
-        [{ text: '⬅️ Главное меню', callback_data: 'main_menu' }]
-      ]
-    }
-  };
-};
-
-const getSpeakerKeyboard = () => {
-  const rows = [];
-  for (let i = 0; i < SPEAKER_NAMES.length; i += 2) {
-    const row = [];
-    row.push({ text: SPEAKER_NAMES[i], callback_data: `spk_${i}` });
-    if (i + 1 < SPEAKER_NAMES.length) {
-      row.push({ text: SPEAKER_NAMES[i + 1], callback_data: `spk_${i + 1}` });
-    }
-    rows.push(row);
-  }
-  rows.push([{ text: '⬅️ Назад', callback_data: 'nb' }]);
-  return { reply_markup: { inline_keyboard: rows } };
-};
-
-// Graceful registration logic: ensures database records exist without resetting user state
-async function registerUser(tgId, username) {
-  await db.saveUser(tgId, username);
-}
+// Register modular handlers
+registerScheduleHandlers(bot);
+registerSpeakerHandlers(bot);
+registerNotebookHandlers(bot);
 
 // Bot Command: /start
 bot.start(async (ctx) => {
@@ -224,41 +53,7 @@ bot.start(async (ctx) => {
   }
 });
 
-// Setup other helper commands
-bot.command('program', async (ctx) => {
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-  await db.updateUserPendingNote(tgId, null);
-  const buttons = await db.getButtons();
-  const progBtn = buttons.find(b => b.id === 'btn_program');
-  const text = progBtn ? progBtn.content : PROGRAM_INTRO;
-  await ctx.reply(text || 'Программа форума:', { parse_mode: 'Markdown', ...(await renderMenuKeyboard(tgId, 'btn_program')) });
-});
-
-bot.command('speakers', async (ctx) => {
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-  await db.updateUserPendingNote(tgId, null);
-  const buttons = await db.getButtons();
-  const spkBtn = buttons.find(b => b.id === 'btn_speakers');
-  const text = spkBtn ? spkBtn.content : SPEAKERS_TEXT;
-  await ctx.reply(text || 'Спикеры форума:', { 
-    parse_mode: 'Markdown', 
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '⬅️ Главное меню', callback_data: 'main_menu' }]
-      ]
-    }
-  });
-});
-
-bot.command(['notebook', 'notes'], async (ctx) => {
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-  await db.updateUserPendingNote(tgId, null);
-  await ctx.reply('📓 Мой блокнот\n\nВыберите действие:', await getNotebookMenu(tgId));
-});
-
+// Bot Command: /menu
 bot.command('menu', async (ctx) => {
   const tgId = ctx.from.id;
   await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
@@ -266,45 +61,7 @@ bot.command('menu', async (ctx) => {
   await ctx.reply('👋 Главное меню MBA AlmaU Impact Forum:', await getMainMenu(tgId));
 });
 
-bot.action('program', async (ctx) => {
-  try {
-    await ctx.answerCbQuery();
-  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  await ctx.reply(PROGRAM_INTRO, { parse_mode: 'Markdown', ...getProgramMenu() });
-});
-
-bot.action('program_d1', async (ctx) => {
-  try {
-    await ctx.answerCbQuery();
-  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  await ctx.reply(PROGRAM_DAY1, { parse_mode: 'Markdown', ...getProgramMenu() });
-});
-
-bot.action('program_d2', async (ctx) => {
-  try {
-    await ctx.answerCbQuery();
-  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  await ctx.reply(PROGRAM_DAY2, { parse_mode: 'Markdown', ...getProgramMenu() });
-});
-
-bot.action('speakers', async (ctx) => {
-  try {
-    await ctx.answerCbQuery();
-  } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  const tgId = ctx.from.id;
-  const buttons = await db.getButtons();
-  const spkBtn = buttons.find(b => b.id === 'btn_speakers');
-  const text = spkBtn ? spkBtn.content : SPEAKERS_TEXT;
-  await ctx.reply(text || 'Спикеры форума:', { 
-    parse_mode: 'Markdown', 
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '⬅️ Главное меню', callback_data: 'main_menu' }]
-      ]
-    }
-  });
-});
-
+// Action: main_menu
 bot.action('main_menu', async (ctx) => {
   try {
     await ctx.answerCbQuery();
@@ -344,256 +101,6 @@ bot.action(/^menu_open_(.+)$/, async (ctx) => {
     });
   }
 });
-
-// Notebook sub-menu
-bot.action('nb', async (ctx) => {
-  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  const tgId = ctx.from.id;
-  await ctx.reply('📓 Мой блокнот\n\nВыберите действие:', await getNotebookMenu(tgId));
-});
-
-// Add note for a speaker — show speaker list
-bot.action('nb_sp', async (ctx) => {
-  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-  await ctx.reply('🎤 Выберите спикера, по которому хотите добавить заметку:', getSpeakerKeyboard());
-});
-
-// Add general note — prompt user
-bot.action('nb_gn', async (ctx) => {
-  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-  await db.updateUserPendingNote(tgId, { type: 'general' });
-  await ctx.reply(
-    '📝 *Напишите вашу общую заметку о форуме прямо сейчас.*\n\n' +
-    '💡 _Пример: «Отличная организация сессии, интересные спикеры и полезные контакты на кофе-брейке!»_',
-    {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '❌ Отмена', callback_data: 'nb_cancel' }]
-        ]
-      }
-    }
-  );
-});
-
-// Cancel note input handler
-bot.action('nb_cancel', async (ctx) => {
-  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  const tgId = ctx.from.id;
-  await db.updateUserPendingNote(tgId, null);
-  await ctx.reply('❌ Ввод заметки отменен.', await getNotebookMenu(tgId));
-});
-
-// Speaker selected — set pending_note and prompt
-SPEAKER_NAMES.forEach((name, i) => {
-  bot.action(`spk_${i}`, async (ctx) => {
-    try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-    const tgId = ctx.from.id;
-    await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-    await db.updateUserPendingNote(tgId, { type: 'speaker', name });
-    await ctx.reply(
-      `📝 *Напишите вашу заметку по спикеру ${name}:*\n\n` +
-      `💡 _Пример: «Спикер выделил 3 ключевых тренда развития ИИ в бизнесе на 2026 год.»_`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '❌ Отмена', callback_data: 'nb_cancel' }]
-          ]
-        }
-      }
-    );
-  });
-});
-
-// View notes grouped by speaker
-bot.action('nb_vsp', async (ctx) => {
-  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-  const notes = await db.getCategorizedNotes(tgId);
-  const speakerNames = Object.keys(notes.speakers);
-  
-  if (speakerNames.length === 0) {
-    return ctx.reply('У вас пока нет заметок по спикерам.', await getNotebookMenu(tgId));
-  }
-
-  let text = '';
-  for (const name of speakerNames) {
-    const items = notes.speakers[name];
-    text += `🎤 ${name}:\n`;
-    items.forEach(n => { text += `  • ${n.text}\n`; });
-    text += '\n';
-  }
-
-  if (text.length > 4000) {
-    const buf = Buffer.from(text, 'utf-8');
-    await ctx.replyWithDocument({ source: buf, filename: `speaker_notes_${tgId}.txt` }, { caption: '📖 Заметки по спикерам', ...(await getNotebookMenu(tgId)) });
-  } else {
-    await ctx.reply(`📖 Заметки по спикерам:\n\n${text}`, await getNotebookMenu(tgId));
-  }
-});
-
-// View general notes
-bot.action('nb_vgn', async (ctx) => {
-  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-  const notes = await db.getGeneralNotes(tgId);
-
-  if (notes.length === 0) {
-    return ctx.reply('У вас пока нет общих заметок.', await getNotebookMenu(tgId));
-  }
-
-  const text = notes.map(n => `• ${n.text}`).join('\n');
-  if (text.length > 4000) {
-    const buf = Buffer.from(text, 'utf-8');
-    await ctx.replyWithDocument({ source: buf, filename: `general_notes_${tgId}.txt` }, { caption: '📖 Общие заметки', ...(await getNotebookMenu(tgId)) });
-  } else {
-    await ctx.reply(`📖 Общие заметки:\n\n${text}`, await getNotebookMenu(tgId));
-  }
-});
-
-// View entire notebook — compile from all sources
-bot.action('nb_all', async (ctx) => {
-  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
-
-  // Compile full notebook from categorized_notes + user_notebooks (insights)
-  const categorized = await db.getCategorizedNotes(tgId);
-  const legacyNotebook = await db.getUserNotebook(tgId);
-  
-  let parts = [];
-
-  // Insights from push-poll (stored in user_notebooks)
-  if (legacyNotebook && legacyNotebook.trim()) {
-    parts.push('📋 Инсайты с сессий:\n' + legacyNotebook);
-  }
-
-  // Speaker notes from categorized_notes
-  const speakerNames = Object.keys(categorized.speakers);
-  if (speakerNames.length > 0) {
-    let spText = '🎤 Заметки по спикерам:';
-    for (const name of speakerNames) {
-      const items = categorized.speakers[name];
-      spText += `\n\n${name}:`;
-      items.forEach(n => { spText += `\n  • ${n.text}`; });
-    }
-    parts.push(spText);
-  }
-
-  // General notes from categorized_notes
-  if (categorized.general.length > 0) {
-    let gnText = '📝 Общие заметки:';
-    categorized.general.forEach(n => { gnText += `\n  • ${n.text}`; });
-    parts.push(gnText);
-  }
-
-  const fullText = parts.join('\n\n─────────────────────\n\n');
-    
-  if (!fullText || fullText.trim() === '') {
-    return ctx.reply('📓 Ваш блокнот пока пуст.\n\nДобавляйте заметки через меню блокнота или отвечайте на пуш-опросы.', await getNotebookMenu(tgId));
-  }
-  
-  if (fullText.length > 4000) {
-    const buffer = Buffer.from(fullText, 'utf-8');
-    await ctx.replyWithDocument({ source: buffer, filename: `notebook_${tgId}.txt` }, {
-      caption: '📓 Весь блокнот (отправлен файлом)',
-      ...(await getNotebookMenu(tgId))
-    });
-  } else {
-    await ctx.reply(`📓 Весь блокнот:\n\n${fullText}`, await getNotebookMenu(tgId));
-  }
-});
-
-// Evaluate user input using Gemini API as Interviewer-Agent with rate-limit retries
-async function evaluateInsight(userInput, sessionTitle) {
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!geminiApiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not defined.');
-  }
-
-  const systemInstructionText = `You are the Interviewer-Agent of the Meta-Harness system.
-Your goal is to validate the insights submitted by conference participants for the session titled: "${sessionTitle}".
-
-Analyze the participant's message.
-Criteria:
-- The insight must be meaningful, specific, and related to the presentation or topic of the session.
-- Reject trivial or one-word messages like "ok", "cool", "normal", "good", "yes", "thanks", "interesting", etc.
-- Reject gibberish or spam.
-
-Response format:
-You MUST respond with a JSON object:
-{
-  "is_valid": true/false,
-  "clean_insight": "A polished, clean, and grammatically correct version of the insight in Russian",
-  "feedback": "If is_valid is false, write a polite, short message in Russian asking the user to expand or clarify. If is_valid is true, leave this empty."
-}`;
-
-  const payload = {
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `System instructions:\n${systemInstructionText}\n\nParticipant message: "${userInput}"`
-          }
-        ]
-      }
-    ],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.2
-    }
-  };
-
-  let retries = 3;
-  let delay = 1000;
-  
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-1.5-flash'}:generateContent?key=${geminiApiKey}`,
-        payload,
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          timeout: 15000
-        }
-      );
-
-      const responseText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!responseText) {
-        throw new Error('Empty response from Gemini API');
-      }
-
-      let cleaned = responseText.trim();
-      const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) {
-        cleaned = jsonMatch[1].trim();
-      }
-      return JSON.parse(cleaned);
-    } catch (error) {
-      const status = error.response?.status;
-      if (status === 429 && i < retries - 1) {
-        console.warn(`Gemini 429 rate limit hit. Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2;
-      } else {
-        console.error('Error calling Gemini API:', error.message);
-        if (i === retries - 1) {
-          throw error;
-        }
-      }
-    }
-  }
-}
 
 // User text response intercepts: acts as the entry point for feedback loops
 bot.on('text', async (ctx) => {
@@ -647,10 +154,7 @@ bot.on('text', async (ctx) => {
   if (!session) {
     console.error('Session not found:', sessionId);
     await db.updateUserPendingSession(tgId, null);
-    return ctx.reply(
-      'Сессия, на которую вы отвечали, уже завершена. Дождитесь следующего опроса.',
-      await getMainMenu(tgId)
-    );
+    return res.status(200).json({ error: 'Session not found' });
   }
 
   const sessionTitle = session.title;
@@ -710,7 +214,11 @@ async function ensureWebhook(req) {
   const currentUrl = `${proto}://${host}/api/webhook`;
   if (currentUrl === lastWebhookUrl) return;
   try {
-    const r = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`, { url: currentUrl });
+    const secretToken = process.env.TELEGRAM_SECRET_TOKEN || 'mba_almau_forum_secret_token_2026';
+    const r = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`, { 
+      url: currentUrl,
+      secret_token: secretToken
+    });
     if (r.data?.ok) {
       lastWebhookUrl = currentUrl;
       console.log('Webhook set to', currentUrl);
@@ -723,6 +231,13 @@ async function ensureWebhook(req) {
 // Vercel Serverless Function entry point
 module.exports = async (req, res) => {
   await ensureWebhook(req);
+
+  const secretToken = process.env.TELEGRAM_SECRET_TOKEN || 'mba_almau_forum_secret_token_2026';
+  const incomingToken = req.headers['x-telegram-bot-api-secret-token'];
+  if (incomingToken !== secretToken) {
+    console.warn('Unauthorized update request blocked (invalid secret token)');
+    return res.status(403).json({ error: 'Forbidden: Invalid secret token' });
+  }
 
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
