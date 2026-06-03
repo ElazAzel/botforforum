@@ -110,6 +110,32 @@ module.exports = async (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="report_${session_id}.xlsx"`);
       return res.end(buf);
 
+    } else if (action === 'get_buttons') {
+      const buttons = await db.getButtons();
+      return res.json({ success: true, buttons });
+
+    } else if (action === 'save_button') {
+      const { id, text, type, parentId, row, content, url } = params;
+      if (!id || !text || !type) {
+        return res.status(400).json({ error: 'id, text, type are required' });
+      }
+      await db.saveButton({
+        id,
+        text,
+        type,
+        parentId: parentId || 'main',
+        row: parseInt(row, 10) || 0,
+        content: content || '',
+        url: url || ''
+      });
+      return res.json({ success: true });
+
+    } else if (action === 'delete_button') {
+      const { button_id } = params;
+      if (!button_id) return res.status(400).json({ error: 'button_id required' });
+      const deleted = await db.deleteButton(button_id);
+      return res.json({ success: true, deleted });
+
     } else {
       return res.status(400).json({ error: `Unknown action: ${action}` });
     }

@@ -10,7 +10,7 @@ if (process.env.BLOB_READ_WRITE_TOKEN) {
 }
 
 function freshStore() {
-  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {} };
+  return { users: {}, sessions: {}, user_notes: {}, user_notebooks: {}, categorized_notes: {}, buttons: [] };
 }
 
 let store = freshStore();
@@ -299,6 +299,56 @@ async function getGeneralNotes(tgId) {
   return notes.general || [];
 }
 
+function getDefaultButtons() {
+  return [
+    { id: 'btn_program', text: '📅 Программа', type: 'submenu', parentId: 'main', row: 0 },
+    { id: 'btn_speakers', text: '🎤 Спикеры', type: 'text', content: `🎤 *Ключевые спикеры MBA AlmaU Impact Forum:*\n\n• *Павел Лукша* — международный эксперт по образовательным и технологическим трендам, соавтор исследований будущего.\n• *Тарик Курейши* — CEO Future Readiness Forum и Xponential Group, экс-советник Bloomberg Media.\n• *Ильдар Валиуллов* — эксперт в сфере развития людей и сопровождения лидеров, MBA AlmaU Alumni.\n• *Мухит Елеуов* — Выпускник Harvard Kennedy School, партнер ADL Disputes.\n• *Мират Ахметсадыков* — со-основатель венчурного фонда MOST, MBA AlmaU Alumni.\n• *Татьяна Иссык* — профессиональный юрист, эксперт по трудовому праву.\n• *Зафар Хашимов* — основатель сети супермаркетов «Корзинка» (Узбекистан).\n• *Кайрат Боранбаев* — учредитель Холдинга «АЛМАЛЫ», Президент ФК «Кайрат».\n• *Виктория Торгунакова* — CEO Freedom Events.\n• *Нурасыл Джарбасов* — председатель совета директоров DEM Group, основатель Astana Venture Club.`, parentId: 'main', row: 0 },
+    { id: 'btn_nb', text: '📓 Мой блокнот', type: 'system', content: 'nb', parentId: 'main', row: 1 },
+    { id: 'btn_program_d1', text: '📅 День 1 (4 июня)', type: 'text', content: `📅 *MBA AlmaU Impact Forum — ДЕНЬ 1 (4 июня)*\n\n• *09:00 – 10:00* | *Регистрация*\n• *10:00 – 10:30* | *Открытие форума*\n  🗣 Асылбек Кожахметов (Президент AlmaU), Тимур Булдыбаев (Ректор AlmaU), Ксения Южанинова-Караденизли (Декан ВШБ AlmaU)\n• *10:45 – 11:45* | *Форсайт-лекция: «Следующие 20 лет: как подготовить бизнес к решающему переходу человечества»*\n  🗣 *Павел Лукша* (международный эксперт по трендам)\n• *11:45 – 12:15* | *Rave Network & Coffee Break*\n• *12:15 – 13:30* | *Панельная дискуссия: «Условия тотальной неопределённости: как не просто выжить, а вырасти?»*\n  🗣 *Н. Джарбасов, К. Боранбаев, В. Торгунакова, З. Хашимов*. Модератор: *Дана Токмурзина*\n• *13:30 – 14:00* | *Lunch Break*\n• *14:00 – 15:15* | *Keynote-сессия: «Leading from the future»*\n  🗣 *Тарик Курейши* (CEO Future Readiness Forum & Xponential Group)\n• *15:15 – 15:30* | *Break*\n• *15:30 – 17:00* | *Воркшоп: «From Inner Stability to Outer Impact: как состояние лидера формирует масштаб его влияния»*\n  🗣 *Ильдар Валиуллов* (MBA AlmaU Alumni)`, parentId: 'btn_program', row: 0 },
+    { id: 'btn_program_d2', text: '📅 День 2 (5 июня)', type: 'text', content: `📅 *MBA AlmaU Impact Forum — ДЕНЬ 2 (5 июня)*\n\n• *09:00 – 10:00* | *Регистрация*\n• *10:00 – 11:00* | *Воркшоп: «Искусство договорённости: Переговоры сквозь призму поведенческих наук»*\n  🗣 *Мухит Елеуов* (Выпускник Harvard Kennedy School, ADL Disputes)\n• *11:00 – 11:30* | *Coffee Break & Network*\n• *11:30 – 13:00* | *Параллельные сессии:*\n  1️⃣ *Showcase-дискуссия: «Герои Impact Driven Education»*\n     🗣 *К. Исмагулов, Б. Сыздыкова, Б. Култаев, А. Ержанова, М. Ахметсадыков*. Модератор: *Данияр Медетов*\n  2️⃣ *Speed Dating: «Менторинг для управленцев»* (по предварительной регистрации)\n     🗣 *Озат Байсеркеев, Ирина Уражанова, Мадина Билялова, Ильдар Тапалов*\n• *13:00 – 13:30* | *Lunch & Network*\n• *13:30 – 14:30* | *Параллельные сессии:*\n  1️⃣ *Воркшоп: «Центральная Азия: окно возможностей для нового поколения»*\n     🗣 *Мират Ахметсадыков* (MOST)\n  2️⃣ *Воркшоп: «Неправильный трудовой договор»*\n     🗣 *Татьяна Иссык*\n• *14:30 – 14:45* | *Break*\n• *14:45 – 15:45* | *Vision Talk: «Beyond Growth: как создавать ценность в мире, где меняются правила игры»*\n  🗣 *Ильдар Валиуллов* (MBA AlmaU Alumni)`, parentId: 'btn_program', row: 0 }
+  ];
+}
+
+async function getButtons() {
+  await ensureLoaded();
+  if (!store.buttons || store.buttons.length === 0) {
+    store.buttons = getDefaultButtons();
+    await save();
+  }
+  return store.buttons;
+}
+
+async function saveButton(button) {
+  await ensureLoaded();
+  if (!store.buttons) store.buttons = getDefaultButtons();
+  
+  const existingIndex = store.buttons.findIndex(b => b.id === button.id);
+  if (existingIndex > -1) {
+    store.buttons[existingIndex] = { ...store.buttons[existingIndex], ...button };
+  } else {
+    store.buttons.push(button);
+  }
+  await save();
+  return true;
+}
+
+async function deleteButton(buttonId) {
+  await ensureLoaded();
+  if (!store.buttons) store.buttons = getDefaultButtons();
+  
+  const initialLength = store.buttons.length;
+  store.buttons = store.buttons.filter(b => b.id !== buttonId);
+  
+  store.buttons.forEach(b => {
+    if (b.parentId === buttonId) {
+      b.parentId = 'main';
+    }
+  });
+  
+  await save();
+  return store.buttons.length < initialLength;
+}
+
 // --- АДМИНИСТРИРОВАНИЕ ---
 async function getAllSessions() {
   await ensureLoaded();
@@ -363,5 +413,8 @@ module.exports = {
   getAllInsightsRaw,
   getUserById,
   deleteSession,
-  getAllUsers
+  getAllUsers,
+  getButtons,
+  saveButton,
+  deleteButton
 };

@@ -71,20 +71,66 @@ const SPEAKER_NAMES = [
 ];
 
 // Keyboards
-const getMainMenu = () => {
-  return {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: '📅 Программа', callback_data: 'program' },
-          { text: '🎤 Спикеры', callback_data: 'speakers' }
-        ],
-        [
-          { text: '📓 Мой блокнот', callback_data: 'nb' }
-        ]
-      ]
+const renderMenuKeyboard = async (tgId, parentId = 'main') => {
+  try {
+    const buttons = await db.getButtons();
+    
+    // Filter and sort buttons for this parent
+    const levelButtons = buttons.filter(b => b.parentId === parentId);
+    
+    // Group by row
+    const rowsMap = {};
+    levelButtons.forEach(b => {
+      const r = b.row !== undefined ? b.row : 0;
+      if (!rowsMap[r]) rowsMap[r] = [];
+      
+      // Map to Telegram inline keyboard format
+      const tb = { text: b.text };
+      if (b.type === 'url') {
+        tb.url = b.url;
+      } else if (b.type === 'system') {
+        tb.callback_data = b.content; // e.g. 'nb'
+      } else {
+        // submenu or text button
+        tb.callback_data = 'menu_open_' + b.id;
+      }
+      rowsMap[r].push(tb);
+    });
+    
+    // Sort rows and compile inline keyboard
+    const inline_keyboard = [];
+    const sortedRowKeys = Object.keys(rowsMap).sort((a, b) => Number(a) - Number(b));
+    sortedRowKeys.forEach(r => {
+      inline_keyboard.push(rowsMap[r]);
+    });
+    
+    // Append back button if we are not at the main menu
+    if (parentId !== 'main') {
+      const currentParentBtn = buttons.find(b => b.id === parentId);
+      let backCallback = 'main_menu';
+      if (currentParentBtn && currentParentBtn.parentId !== 'main') {
+        backCallback = 'menu_open_' + currentParentBtn.parentId;
+      }
+      inline_keyboard.push([{ text: '⬅️ Назад', callback_data: backCallback }]);
     }
-  };
+    
+    return { reply_markup: { inline_keyboard } };
+  } catch (err) {
+    console.error('Error rendering menu keyboard:', err);
+    // Safe fallback static menu
+    return {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📅 Программа', callback_data: 'program' }, { text: '🎤 Спикеры', callback_data: 'speakers' }],
+          [{ text: '📓 Мой блокнот', callback_data: 'nb' }]
+        ]
+      }
+    };
+  }
+};
+
+const getMainMenu = async (tgId) => {
+  return await renderMenuKeyboard(tgId, 'main');
 };
 
 const getProgramMenu = () => {
@@ -103,15 +149,33 @@ const getProgramMenu = () => {
   };
 };
 
-const getNotebookMenu = () => {
+const getNotebookMenu = async (tgId) => {
+  let speakerCount = 0;
+  let generalCount = 0;
+  let totalCount = 0;
+  if (tgId) {
+    try {
+      const categorized = await db.getCategorizedNotes(tgId);
+      speakerCount = Object.values(categorized.speakers).reduce((sum, list) => sum + list.length, 0);
+      generalCount = categorized.general.length;
+      
+      const legacyNotebook = await db.getUserNotebook(tgId);
+      const hasInsights = legacyNotebook && legacyNotebook.trim() ? 1 : 0;
+      const insightCount = hasInsights ? legacyNotebook.split('\n\n').filter(Boolean).length : 0;
+      totalCount = speakerCount + generalCount + insightCount;
+    } catch (e) {
+      console.error('Error fetching notebook stats for menu:', e.message);
+    }
+  }
+
   return {
     reply_markup: {
       inline_keyboard: [
         [{ text: '📝 Добавить заметку по спикеру', callback_data: 'nb_sp' }],
         [{ text: '📝 Общая заметка', callback_data: 'nb_gn' }],
-        [{ text: '📖 По спикерам', callback_data: 'nb_vsp' }],
-        [{ text: '📖 Общие заметки', callback_data: 'nb_vgn' }],
-        [{ text: '📖 Весь блокнот', callback_data: 'nb_all' }],
+        [{ text: `📖 По спикерам (${speakerCount})`, callback_data: 'nb_vsp' }],
+        [{ text: `📖 Общие заметки (${generalCount})`, callback_data: 'nb_vgn' }],
+        [{ text: `📖 Весь блокнот (${totalCount})`, callback_data: 'nb_all' }],
         [{ text: '⬅️ Главное меню', callback_data: 'main_menu' }]
       ]
     }
@@ -143,20 +207,63 @@ bot.start(async (ctx) => {
   const username = ctx.from.username || ctx.from.first_name || 'Anonymous';
   
   await registerUser(tgId, username);
+  await db.updateUserPendingNote(tgId, null); // Clear pending notes input state on start
   
   const activeSession = await db.getActiveSession();
   if (activeSession) {
     await db.updateUserPendingSession(tgId, activeSession.session_id);
     await ctx.reply(
       `👋 Приветствую в боте MBA AlmaU Impact Forum!\n\n📢 Сейчас идёт сбор инсайтов по сессии "${activeSession.title}". Отправьте свой ответ прямо сейчас!`,
-      getMainMenu()
+      await getMainMenu(tgId)
     );
   } else {
     await ctx.reply(
       `👋 Приветствую в боте MBA AlmaU Impact Forum!\n\nИспользуйте меню ниже для навигации. Во время докладов вы будете получать пуш-опросы для сбора ваших инсайтов.`,
-      getMainMenu()
+      await getMainMenu(tgId)
     );
   }
+});
+
+// Setup other helper commands
+bot.command('program', async (ctx) => {
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
+  await db.updateUserPendingNote(tgId, null);
+  const buttons = await db.getButtons();
+  const progBtn = buttons.find(b => b.id === 'btn_program');
+  const text = progBtn ? progBtn.content : PROGRAM_INTRO;
+  await ctx.reply(text || 'Программа форума:', { parse_mode: 'Markdown', ...(await renderMenuKeyboard(tgId, 'btn_program')) });
+});
+
+bot.command('speakers', async (ctx) => {
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
+  await db.updateUserPendingNote(tgId, null);
+  const buttons = await db.getButtons();
+  const spkBtn = buttons.find(b => b.id === 'btn_speakers');
+  const text = spkBtn ? spkBtn.content : SPEAKERS_TEXT;
+  await ctx.reply(text || 'Спикеры форума:', { 
+    parse_mode: 'Markdown', 
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '⬅️ Главное меню', callback_data: 'main_menu' }]
+      ]
+    }
+  });
+});
+
+bot.command(['notebook', 'notes'], async (ctx) => {
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
+  await db.updateUserPendingNote(tgId, null);
+  await ctx.reply('📓 Мой блокнот\n\nВыберите действие:', await getNotebookMenu(tgId));
+});
+
+bot.command('menu', async (ctx) => {
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
+  await db.updateUserPendingNote(tgId, null);
+  await ctx.reply('👋 Главное меню MBA AlmaU Impact Forum:', await getMainMenu(tgId));
 });
 
 bot.action('program', async (ctx) => {
@@ -184,7 +291,11 @@ bot.action('speakers', async (ctx) => {
   try {
     await ctx.answerCbQuery();
   } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  await ctx.reply(SPEAKERS_TEXT, { 
+  const tgId = ctx.from.id;
+  const buttons = await db.getButtons();
+  const spkBtn = buttons.find(b => b.id === 'btn_speakers');
+  const text = spkBtn ? spkBtn.content : SPEAKERS_TEXT;
+  await ctx.reply(text || 'Спикеры форума:', { 
     parse_mode: 'Markdown', 
     reply_markup: {
       inline_keyboard: [
@@ -198,13 +309,47 @@ bot.action('main_menu', async (ctx) => {
   try {
     await ctx.answerCbQuery();
   } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  await ctx.reply('👋 Главное меню MBA AlmaU Impact Forum:', getMainMenu());
+  const tgId = ctx.from.id;
+  await ctx.reply('👋 Главное меню MBA AlmaU Impact Forum:', await getMainMenu(tgId));
+});
+
+// Dynamic menu buttons actions handler
+bot.action(/^menu_open_(.+)$/, async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  const buttonId = ctx.match[1];
+  const tgId = ctx.from.id;
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
+  
+  const buttons = await db.getButtons();
+  const button = buttons.find(b => b.id === buttonId);
+  if (!button) {
+    return ctx.reply('Кнопка не найдена.');
+  }
+  
+  if (button.type === 'submenu') {
+    const text = button.content || 'Выберите действие:';
+    await ctx.reply(text, { parse_mode: 'Markdown', ...(await renderMenuKeyboard(tgId, buttonId)) });
+  } else if (button.type === 'text') {
+    let backCallback = 'main_menu';
+    if (button.parentId !== 'main') {
+      backCallback = 'menu_open_' + button.parentId;
+    }
+    await ctx.reply(button.content || '', {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '⬅️ Назад', callback_data: backCallback }]
+        ]
+      }
+    });
+  }
 });
 
 // Notebook sub-menu
 bot.action('nb', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  await ctx.reply('📓 Мой блокнот\n\nВыберите действие:', getNotebookMenu());
+  const tgId = ctx.from.id;
+  await ctx.reply('📓 Мой блокнот\n\nВыберите действие:', await getNotebookMenu(tgId));
 });
 
 // Add note for a speaker — show speaker list
@@ -221,7 +366,26 @@ bot.action('nb_gn', async (ctx) => {
   const tgId = ctx.from.id;
   await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
   await db.updateUserPendingNote(tgId, { type: 'general' });
-  await ctx.reply('📝 Напишите вашу общую заметку о форуме прямо сейчас.');
+  await ctx.reply(
+    '📝 *Напишите вашу общую заметку о форуме прямо сейчас.*\n\n' +
+    '💡 _Пример: «Отличная организация сессии, интересные спикеры и полезные контакты на кофе-брейке!»_',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '❌ Отмена', callback_data: 'nb_cancel' }]
+        ]
+      }
+    }
+  );
+});
+
+// Cancel note input handler
+bot.action('nb_cancel', async (ctx) => {
+  try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
+  const tgId = ctx.from.id;
+  await db.updateUserPendingNote(tgId, null);
+  await ctx.reply('❌ Ввод заметки отменен.', await getNotebookMenu(tgId));
 });
 
 // Speaker selected — set pending_note and prompt
@@ -231,7 +395,18 @@ SPEAKER_NAMES.forEach((name, i) => {
     const tgId = ctx.from.id;
     await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
     await db.updateUserPendingNote(tgId, { type: 'speaker', name });
-    await ctx.reply(`📝 Напишите вашу заметку по спикеру ${name}:`);
+    await ctx.reply(
+      `📝 *Напишите вашу заметку по спикеру ${name}:*\n\n` +
+      `💡 _Пример: «Спикер выделил 3 ключевых тренда развития ИИ в бизнесе на 2026 год.»_`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '❌ Отмена', callback_data: 'nb_cancel' }]
+          ]
+        }
+      }
+    );
   });
 });
 
@@ -244,7 +419,7 @@ bot.action('nb_vsp', async (ctx) => {
   const speakerNames = Object.keys(notes.speakers);
   
   if (speakerNames.length === 0) {
-    return ctx.reply('У вас пока нет заметок по спикерам.', getNotebookMenu());
+    return ctx.reply('У вас пока нет заметок по спикерам.', await getNotebookMenu(tgId));
   }
 
   let text = '';
@@ -257,9 +432,9 @@ bot.action('nb_vsp', async (ctx) => {
 
   if (text.length > 4000) {
     const buf = Buffer.from(text, 'utf-8');
-    await ctx.replyWithDocument({ source: buf, filename: `speaker_notes_${tgId}.txt` }, { caption: '📖 Заметки по спикерам', ...getNotebookMenu() });
+    await ctx.replyWithDocument({ source: buf, filename: `speaker_notes_${tgId}.txt` }, { caption: '📖 Заметки по спикерам', ...(await getNotebookMenu(tgId)) });
   } else {
-    await ctx.reply(`📖 Заметки по спикерам:\n\n${text}`, getNotebookMenu());
+    await ctx.reply(`📖 Заметки по спикерам:\n\n${text}`, await getNotebookMenu(tgId));
   }
 });
 
@@ -271,15 +446,15 @@ bot.action('nb_vgn', async (ctx) => {
   const notes = await db.getGeneralNotes(tgId);
 
   if (notes.length === 0) {
-    return ctx.reply('У вас пока нет общих заметок.', getNotebookMenu());
+    return ctx.reply('У вас пока нет общих заметок.', await getNotebookMenu(tgId));
   }
 
   const text = notes.map(n => `• ${n.text}`).join('\n');
   if (text.length > 4000) {
     const buf = Buffer.from(text, 'utf-8');
-    await ctx.replyWithDocument({ source: buf, filename: `general_notes_${tgId}.txt` }, { caption: '📖 Общие заметки', ...getNotebookMenu() });
+    await ctx.replyWithDocument({ source: buf, filename: `general_notes_${tgId}.txt` }, { caption: '📖 Общие заметки', ...(await getNotebookMenu(tgId)) });
   } else {
-    await ctx.reply(`📖 Общие заметки:\n\n${text}`, getNotebookMenu());
+    await ctx.reply(`📖 Общие заметки:\n\n${text}`, await getNotebookMenu(tgId));
   }
 });
 
@@ -322,17 +497,17 @@ bot.action('nb_all', async (ctx) => {
   const fullText = parts.join('\n\n─────────────────────\n\n');
     
   if (!fullText || fullText.trim() === '') {
-    return ctx.reply('📓 Ваш блокнот пока пуст.\n\nДобавляйте заметки через меню блокнота или отвечайте на пуш-опросы.', getNotebookMenu());
+    return ctx.reply('📓 Ваш блокнот пока пуст.\n\nДобавляйте заметки через меню блокнота или отвечайте на пуш-опросы.', await getNotebookMenu(tgId));
   }
   
   if (fullText.length > 4000) {
     const buffer = Buffer.from(fullText, 'utf-8');
     await ctx.replyWithDocument({ source: buffer, filename: `notebook_${tgId}.txt` }, {
       caption: '📓 Весь блокнот (отправлен файлом)',
-      ...getNotebookMenu()
+      ...(await getNotebookMenu(tgId))
     });
   } else {
-    await ctx.reply(`📓 Весь блокнот:\n\n${fullText}`, getNotebookMenu());
+    await ctx.reply(`📓 Весь блокнот:\n\n${fullText}`, await getNotebookMenu(tgId));
   }
 });
 
@@ -444,13 +619,13 @@ bot.on('text', async (ctx) => {
       await db.addSpeakerNote(tgId, note.name, userInput);
       await ctx.reply(
         `✅ Заметка по спикеру «${note.name}» сохранена в блокнот!`,
-        getNotebookMenu()
+        await getNotebookMenu(tgId)
       );
     } else if (note.type === 'general') {
       await db.addGeneralNote(tgId, userInput);
       await ctx.reply(
         '✅ Общая заметка сохранена в блокнот!',
-        getNotebookMenu()
+        await getNotebookMenu(tgId)
       );
     }
     return;
@@ -460,7 +635,7 @@ bot.on('text', async (ctx) => {
   if (!user || !user.pending_session_id) {
     return ctx.reply(
       `📝 Чтобы добавить заметку, используйте кнопку «📓 Мой блокнот».\n\nДля отправки инсайта дождитесь пуш-опроса от организаторов.`,
-      getMainMenu()
+      await getMainMenu(tgId)
     );
   }
 
@@ -474,7 +649,7 @@ bot.on('text', async (ctx) => {
     await db.updateUserPendingSession(tgId, null);
     return ctx.reply(
       'Сессия, на которую вы отвечали, уже завершена. Дождитесь следующего опроса.',
-      getMainMenu()
+      await getMainMenu(tgId)
     );
   }
 
@@ -500,7 +675,7 @@ bot.on('text', async (ctx) => {
 
       await ctx.reply(
         `✅ Инсайт принят и записан в ваш блокнот!\n\n📝 Отформатированный инсайт:\n«${cleanInsight}»\n\n💡 Отправьте ещё инсайт или нажмите кнопку меню для навигации.`,
-        getMainMenu()
+        await getMainMenu(tgId)
       );
 
     } else {
@@ -521,7 +696,7 @@ bot.on('text', async (ctx) => {
 
     await ctx.reply(
       '⚠️ ИИ-валидация временно недоступна, но ваш инсайт всё равно сохранён в блокнот! ✅\n\nОтправьте ещё один инсайт или используйте меню.',
-      getMainMenu()
+      await getMainMenu(tgId)
     );
   }
 });

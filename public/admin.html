@@ -88,7 +88,12 @@
 </head>
 <body>
 <div class="container">
-  <h1>MBA AlmaU Impact Forum — Admin</h1>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-wrap:wrap; gap:10px;">
+    <h1>MBA AlmaU Impact Forum — Admin</h1>
+    <div id="webhook_status" style="font-size:12px; font-weight:600; color:#94a3b8; background:#1e293b; padding:4px 10px; border-radius:10px; border:1px solid #334155;">
+      ⏳ Настройка бота...
+    </div>
+  </div>
   <p class="subtitle">MBA AlmaU Impact Forum — управление ботом</p>
   <div id="msg" class="msg"></div>
 
@@ -124,6 +129,74 @@
         <img id="broadcast_preview_img" style="width:100%; border-radius:8px; border:1px solid #334155">
       </div>
       <button class="btn btn-purple" id="broadcast_btn" onclick="sendBroadcast()">🔔 Отправить уведомление всем</button>
+    </div>
+
+    <div class="card">
+      <h2>Настройка кнопок бота (меню)</h2>
+      <div id="buttons_status" style="margin-bottom: 12px; font-size: 13px; color: #94a3b8;">
+        Вы можете добавлять новые кнопки, менять тексты разделов программы и списков спикеров.
+      </div>
+      <button class="btn btn-sm btn-purple" style="margin-bottom: 15px;" onclick="showAddButtonForm()">➕ Добавить новую кнопку</button>
+      
+      <!-- Form for adding/editing button (initially hidden) -->
+      <div id="button_form_block" class="hidden" style="background: #0f172a; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #334155;">
+        <h3 id="form_title" style="font-size: 14px; color: #38bdf8; margin-bottom: 10px;">Добавить кнопку</h3>
+        <input type="hidden" id="edit_btn_is_new" value="true">
+        <div class="row">
+          <div>
+            <label>ID кнопки (на латинице)</label>
+            <input id="btn_id" placeholder="например, btn_my_page">
+          </div>
+          <div>
+            <label>Текст на кнопке</label>
+            <input id="btn_text" placeholder="например, 💡 Помощь">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Тип действия</label>
+            <select id="btn_type" onchange="adjustButtonFormFields()" style="width:100%; padding:10px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:14px; margin-bottom:10px;">
+              <option value="text">📄 Текстовая страница</option>
+              <option value="submenu">📂 Подменю</option>
+              <option value="url">🔗 Ссылка на сайт</option>
+              <option value="system">⚙️ Системное действие</option>
+            </select>
+          </div>
+          <div>
+            <label>Родительский раздел</label>
+            <select id="btn_parent" style="width:100%; padding:10px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:14px; margin-bottom:10px;">
+              <option value="main">Главное меню</option>
+            </select>
+          </div>
+          <div>
+            <label>Номер строки (ряд)</label>
+            <input type="number" id="btn_row" value="0" min="0" max="10">
+          </div>
+        </div>
+        
+        <div id="btn_field_content">
+          <label>Текст сообщения (поддерживает Markdown)</label>
+          <textarea id="btn_content" style="min-height: 100px;" placeholder="Введите текст, который бот пришлет при нажатии на кнопку..."></textarea>
+        </div>
+        <div id="btn_field_url" class="hidden">
+          <label>Ссылка (URL)</label>
+          <input id="btn_url" placeholder="https://example.com">
+        </div>
+        <div id="btn_field_system" class="hidden">
+          <label>Системное действие</label>
+          <select id="btn_system_action" style="width:100%; padding:10px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:14px; margin-bottom:10px;">
+            <option value="nb">Блокнот (Мой блокнот)</option>
+          </select>
+        </div>
+        
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button class="btn btn-sm btn-green" style="flex:1" onclick="saveButton()">Сохранить</button>
+          <button class="btn btn-sm btn-outline" style="flex:1" onclick="hideButtonForm()">Отмена</button>
+        </div>
+      </div>
+
+      <!-- Tree structure view of buttons -->
+      <div id="buttons_tree"></div>
     </div>
 
     <div class="card">
@@ -198,7 +271,7 @@ async function apiPost(body) {
 }
 
 async function loadAll() {
-  await Promise.all([loadSessions(), loadStats()]);
+  await Promise.all([loadSessions(), loadStats(), loadButtons()]);
 }
 
 async function loadStats() {
@@ -355,6 +428,254 @@ function downloadExcel() {
   if (!currentSession) return;
   window.open('/api/admin?action=download_excel&session_id=' + encodeURIComponent(currentSession) + '&admin_password=' + encodeURIComponent(PW), '_blank');
 }
+
+// --- Управление кнопками ---
+let allButtons = [];
+
+async function loadButtons() {
+  try {
+    const d = await api('get_buttons');
+    if (!d.success) return;
+    allButtons = d.buttons || [];
+    
+    // Update the parent select choices in the form
+    const parentSelect = document.getElementById('btn_parent');
+    parentSelect.innerHTML = '<option value="main">Главное меню</option>';
+    allButtons.filter(b => b.type === 'submenu').forEach(b => {
+      parentSelect.innerHTML += `<option value="${esc(b.id)}">Подменю: ${esc(b.text)}</option>`;
+    });
+
+    renderButtonsTree();
+  } catch (e) {
+    console.error('Failed to load buttons:', e);
+  }
+}
+
+function renderButtonsTree() {
+  const el = document.getElementById('buttons_tree');
+  if (allButtons.length === 0) {
+    el.innerHTML = '<div class="empty">Список кнопок пуст</div>';
+    return;
+  }
+  
+  let html = '';
+  const mainButtons = allButtons.filter(b => b.parentId === 'main' || !b.parentId);
+  mainButtons.sort((a,b) => (a.row || 0) - (b.row || 0));
+
+  html += `<div style="font-weight:bold; color:#38bdf8; margin-bottom:8px; font-size:14px; margin-top: 10px;">🏠 Главное меню:</div>`;
+  if (mainButtons.length === 0) {
+    html += '<div class="empty" style="padding:10px;">Нет кнопок на главном уровне</div>';
+  } else {
+    html += '<div style="margin-left: 5px; border-left: 2px dashed #334155; padding-left: 15px; margin-bottom: 20px;">';
+    mainButtons.forEach(b => {
+      html += renderButtonNode(b, 0);
+    });
+    html += '</div>';
+  }
+  
+  el.innerHTML = html;
+}
+
+function renderButtonNode(b, level) {
+  let detailsText = '';
+  if (b.type === 'text') {
+    detailsText = `<span style="color:#a78bfa; font-size:11px;">[Текст]</span>`;
+  } else if (b.type === 'submenu') {
+    detailsText = `<span style="color:#34d399; font-size:11px;">[Подменю]</span>`;
+  } else if (b.type === 'url') {
+    detailsText = `<span style="color:#60a5fa; font-size:11px;">[Ссылка]</span>`;
+  } else if (b.type === 'system') {
+    detailsText = `<span style="color:#fbbf24; font-size:11px;">[Система]</span>`;
+  }
+
+  const safeId = esc(b.id);
+  let html = `
+    <div class="session" style="padding:8px 12px; margin-bottom:6px; background:#0f172a;">
+      <div class="info">
+        <div class="title" style="font-size:13px; font-weight: 500;">${esc(b.text)} ${detailsText} <span style="font-size:11px; color:#64748b; font-weight:normal;">(Ряд: ${b.row || 0}, ID: ${safeId})</span></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-sm btn-outline" style="padding:2px 6px; font-size:11px;" onclick="editButton('${safeId}')">✏️</button>
+        <button class="btn btn-sm btn-red" style="padding:2px 6px; font-size:11px;" onclick="confirmDeleteButton('${safeId}', '${esc(b.text)}')">🗑</button>
+      </div>
+    </div>
+  `;
+  
+  if (b.type === 'submenu') {
+    const children = allButtons.filter(child => child.parentId === b.id);
+    children.sort((a,b) => (a.row || 0) - (b.row || 0));
+    
+    html += `<div style="margin-left: 20px; border-left: 2px dashed #334155; padding-left: 15px; margin-bottom: 10px;">`;
+    if (children.length === 0) {
+      html += `<div class="empty" style="padding:5px; font-size:11px;">Внутри подменю пусто</div>`;
+    } else {
+      children.forEach(child => {
+        html += renderButtonNode(child, level + 1);
+      });
+    }
+    html += `</div>`;
+  }
+  
+  return html;
+}
+
+function editButton(id) {
+  const b = allButtons.find(x => x.id === id);
+  if (!b) return;
+  
+  document.getElementById('edit_btn_is_new').value = 'false';
+  document.getElementById('form_title').textContent = 'Редактировать кнопку';
+  document.getElementById('btn_id').value = b.id;
+  document.getElementById('btn_id').disabled = true;
+  document.getElementById('btn_text').value = b.text;
+  document.getElementById('btn_type').value = b.type;
+  document.getElementById('btn_parent').value = b.parentId || 'main';
+  document.getElementById('btn_row').value = b.row || 0;
+  
+  if (b.type === 'url') {
+    document.getElementById('btn_url').value = b.url || '';
+  } else if (b.type === 'system') {
+    document.getElementById('btn_system_action').value = b.content || 'nb';
+  } else {
+    document.getElementById('btn_content').value = b.content || '';
+  }
+  
+  adjustButtonFormFields();
+  document.getElementById('button_form_block').classList.remove('hidden');
+}
+
+function showAddButtonForm() {
+  document.getElementById('edit_btn_is_new').value = 'true';
+  document.getElementById('form_title').textContent = 'Добавить новую кнопку';
+  document.getElementById('btn_id').value = '';
+  document.getElementById('btn_id').disabled = false;
+  document.getElementById('btn_text').value = '';
+  document.getElementById('btn_type').value = 'text';
+  document.getElementById('btn_parent').value = 'main';
+  document.getElementById('btn_row').value = '0';
+  document.getElementById('btn_content').value = '';
+  document.getElementById('btn_url').value = '';
+  
+  adjustButtonFormFields();
+  document.getElementById('button_form_block').classList.remove('hidden');
+}
+
+function adjustButtonFormFields() {
+  const type = document.getElementById('btn_type').value;
+  
+  document.getElementById('btn_field_content').classList.add('hidden');
+  document.getElementById('btn_field_url').classList.add('hidden');
+  document.getElementById('btn_field_system').classList.add('hidden');
+  
+  if (type === 'text' || type === 'submenu') {
+    document.getElementById('btn_field_content').classList.remove('hidden');
+    const contentLabel = document.querySelector('#btn_field_content label');
+    if (type === 'submenu') {
+      contentLabel.textContent = 'Текст при входе в подменю (поддерживает Markdown)';
+    } else {
+      contentLabel.textContent = 'Текст сообщения (поддерживает Markdown)';
+    }
+  } else if (type === 'url') {
+    document.getElementById('btn_field_url').classList.remove('hidden');
+  } else if (type === 'system') {
+    document.getElementById('btn_field_system').classList.remove('hidden');
+  }
+}
+
+function hideButtonForm() {
+  document.getElementById('button_form_block').classList.add('hidden');
+}
+
+async function saveButton() {
+  const isNew = document.getElementById('edit_btn_is_new').value === 'true';
+  const id = document.getElementById('btn_id').value.trim();
+  const text = document.getElementById('btn_text').value.trim();
+  const type = document.getElementById('btn_type').value;
+  const parentId = document.getElementById('btn_parent').value;
+  const row = parseInt(document.getElementById('btn_row').value, 10) || 0;
+  
+  if (!id || !text) {
+    return alert('Заполните ID и текст кнопки');
+  }
+  
+  if (!/^[a-zA-Z0-9_]+$/.test(id)) {
+    return alert('ID кнопки должен состоять только из букв латиницы, цифр и символа подчеркивания');
+  }
+
+  let content = '';
+  let url = '';
+  if (type === 'text' || type === 'submenu') {
+    content = document.getElementById('btn_content').value.trim();
+  } else if (type === 'url') {
+    url = document.getElementById('btn_url').value.trim();
+  } else if (type === 'system') {
+    content = document.getElementById('btn_system_action').value;
+  }
+  
+  try {
+    const d = await apiPost({
+      action: 'save_button',
+      id,
+      text,
+      type,
+      parentId,
+      row,
+      content,
+      url
+    });
+    
+    if (d.success) {
+      msg('✅ Кнопка сохранена', true);
+      hideButtonForm();
+      await loadButtons();
+    } else {
+      msg('❌ Ошибка сохранения кнопки: ' + (d.error || 'неизвестная ошибка'), false);
+    }
+  } catch (e) {
+    msg('❌ Ошибка соединения: ' + e.message, false);
+  }
+}
+
+function confirmDeleteButton(id, text) {
+  showConfirm('Удалить кнопку «' + text + '»? Если это подменю, все вложенные в него кнопки будут перенесены в Главное меню.', () => deleteButton(id));
+}
+
+async function deleteButton(id) {
+  try {
+    const d = await apiPost({ action: 'delete_button', button_id: id });
+    if (d.success) {
+      msg('🗑 Кнопка удалена', true);
+      await loadButtons();
+    } else {
+      msg('❌ Ошибка удаления кнопки', false);
+    }
+  } catch (e) {
+    msg('❌ Ошибка: ' + e.message, false);
+  }
+}
+
+// Auto-setup webhook on admin load
+fetch('/api/setup')
+  .then(res => res.json().catch(() => ({ ok: false })))
+  .then(data => {
+    const el = document.getElementById('webhook_status');
+    if (data.ok) {
+      el.innerHTML = 'Бот активен ✅';
+      el.style.color = '#6ee7b7';
+      el.style.background = '#064e3b';
+      el.style.borderColor = '#064e3b';
+    } else {
+      el.innerHTML = '⚠️ ошибка';
+      el.style.color = '#fca5a5';
+      el.style.background = '#7f1d1d';
+    }
+  })
+  .catch(err => {
+    const el = document.getElementById('webhook_status');
+    el.innerHTML = '⚠️ ошибка';
+    el.style.color = '#fca5a5';
+    el.style.background = '#7f1d1d';
+  });
 </script>
 </body>
 </html>

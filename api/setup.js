@@ -19,6 +19,24 @@ module.exports = async (req, res) => {
       { url: webhookUrl }
     );
 
+    // Устанавливаем меню команд в Telegram
+    try {
+      await axios.post(
+        `https://api.telegram.org/bot${token}/setMyCommands`,
+        {
+          commands: [
+            { command: 'start', description: 'Запустить бота / Главное меню' },
+            { command: 'program', description: 'Программа форума' },
+            { command: 'speakers', description: 'Спикеры форума' },
+            { command: 'notebook', description: 'Мой блокнот' },
+            { command: 'menu', description: 'Главное меню' }
+          ]
+        }
+      );
+    } catch (cmdErr) {
+      console.warn('Failed to set Telegram commands:', cmdErr.message);
+    }
+
     const result = response.data;
 
     // Красивая HTML-страничка с результатом
