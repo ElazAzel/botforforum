@@ -148,12 +148,12 @@ bot.start(async (ctx) => {
   if (activeSession) {
     await db.updateUserPendingSession(tgId, activeSession.session_id);
     await ctx.reply(
-      `👋 Приветствую в боте конференции Meta-Harness!\n\n📢 Сейчас идёт сбор инсайтов по сессии *"${activeSession.title}"*. Отправьте свой ответ прямо сейчас!`,
+      `👋 Приветствую в боте MBA AlmaU Impact Forum!\n\n📢 Сейчас идёт сбор инсайтов по сессии "${activeSession.title}". Отправьте свой ответ прямо сейчас!`,
       getMainMenu()
     );
   } else {
     await ctx.reply(
-      `👋 Приветствую в боте конференции Meta-Harness!\n\nИспользуйте меню ниже для навигации. Во время докладов вы будете получать пуш-опросы для сбора ваших инсайтов.`,
+      `👋 Приветствую в боте MBA AlmaU Impact Forum!\n\nИспользуйте меню ниже для навигации. Во время докладов вы будете получать пуш-опросы для сбора ваших инсайтов.`,
       getMainMenu()
     );
   }
@@ -198,20 +198,20 @@ bot.action('main_menu', async (ctx) => {
   try {
     await ctx.answerCbQuery();
   } catch (e) { console.warn('answerCbQuery failed:', e.message); }
-  await ctx.reply('👋 Главное меню бота конференции Meta-Harness:', getMainMenu());
+  await ctx.reply('👋 Главное меню MBA AlmaU Impact Forum:', getMainMenu());
 });
 
 // Notebook sub-menu
 bot.action('nb', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
-  await ctx.reply('📓 *Мой блокнот*\n\nВыберите действие:', { parse_mode: 'Markdown', ...getNotebookMenu() });
+  await ctx.reply('📓 Мой блокнот\n\nВыберите действие:', getNotebookMenu());
 });
 
 // Add note for a speaker — show speaker list
 bot.action('nb_sp', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
   const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || 'Anonymous');
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
   await ctx.reply('🎤 Выберите спикера, по которому хотите добавить заметку:', getSpeakerKeyboard());
 });
 
@@ -219,7 +219,7 @@ bot.action('nb_sp', async (ctx) => {
 bot.action('nb_gn', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
   const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || 'Anonymous');
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
   await db.updateUserPendingNote(tgId, { type: 'general' });
   await ctx.reply('📝 Напишите вашу общую заметку о форуме прямо сейчас.');
 });
@@ -229,9 +229,9 @@ SPEAKER_NAMES.forEach((name, i) => {
   bot.action(`spk_${i}`, async (ctx) => {
     try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
     const tgId = ctx.from.id;
-    await registerUser(tgId, ctx.from.username || 'Anonymous');
+    await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
     await db.updateUserPendingNote(tgId, { type: 'speaker', name });
-    await ctx.reply(`📝 Напишите вашу заметку по спикеру *${name}*:`, { parse_mode: 'Markdown' });
+    await ctx.reply(`📝 Напишите вашу заметку по спикеру ${name}:`);
   });
 });
 
@@ -239,7 +239,7 @@ SPEAKER_NAMES.forEach((name, i) => {
 bot.action('nb_vsp', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
   const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || 'Anonymous');
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
   const notes = await db.getCategorizedNotes(tgId);
   const speakerNames = Object.keys(notes.speakers);
   
@@ -250,8 +250,8 @@ bot.action('nb_vsp', async (ctx) => {
   let text = '';
   for (const name of speakerNames) {
     const items = notes.speakers[name];
-    text += `*${name}:*\n`;
-    items.forEach(n => { text += `• ${n.text}\n`; });
+    text += `🎤 ${name}:\n`;
+    items.forEach(n => { text += `  • ${n.text}\n`; });
     text += '\n';
   }
 
@@ -259,7 +259,7 @@ bot.action('nb_vsp', async (ctx) => {
     const buf = Buffer.from(text, 'utf-8');
     await ctx.replyWithDocument({ source: buf, filename: `speaker_notes_${tgId}.txt` }, { caption: '📖 Заметки по спикерам', ...getNotebookMenu() });
   } else {
-    await ctx.reply(`📖 *Заметки по спикерам:*\n\n${text}`, { parse_mode: 'Markdown', ...getNotebookMenu() });
+    await ctx.reply(`📖 Заметки по спикерам:\n\n${text}`, getNotebookMenu());
   }
 });
 
@@ -267,7 +267,7 @@ bot.action('nb_vsp', async (ctx) => {
 bot.action('nb_vgn', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
   const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || 'Anonymous');
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
   const notes = await db.getGeneralNotes(tgId);
 
   if (notes.length === 0) {
@@ -279,29 +279,60 @@ bot.action('nb_vgn', async (ctx) => {
     const buf = Buffer.from(text, 'utf-8');
     await ctx.replyWithDocument({ source: buf, filename: `general_notes_${tgId}.txt` }, { caption: '📖 Общие заметки', ...getNotebookMenu() });
   } else {
-    await ctx.reply(`📖 *Общие заметки:*\n\n${text}`, { parse_mode: 'Markdown', ...getNotebookMenu() });
+    await ctx.reply(`📖 Общие заметки:\n\n${text}`, getNotebookMenu());
   }
 });
 
-// View entire notebook (original behavior)
+// View entire notebook — compile from all sources
 bot.action('nb_all', async (ctx) => {
   try { await ctx.answerCbQuery(); } catch (e) { console.warn(e.message); }
   const tgId = ctx.from.id;
-  await registerUser(tgId, ctx.from.username || 'Anonymous');
-  const text = await db.getUserNotebook(tgId);
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
+
+  // Compile full notebook from categorized_notes + user_notebooks (insights)
+  const categorized = await db.getCategorizedNotes(tgId);
+  const legacyNotebook = await db.getUserNotebook(tgId);
+  
+  let parts = [];
+
+  // Insights from push-poll (stored in user_notebooks)
+  if (legacyNotebook && legacyNotebook.trim()) {
+    parts.push('📋 Инсайты с сессий:\n' + legacyNotebook);
+  }
+
+  // Speaker notes from categorized_notes
+  const speakerNames = Object.keys(categorized.speakers);
+  if (speakerNames.length > 0) {
+    let spText = '🎤 Заметки по спикерам:';
+    for (const name of speakerNames) {
+      const items = categorized.speakers[name];
+      spText += `\n\n${name}:`;
+      items.forEach(n => { spText += `\n  • ${n.text}`; });
+    }
+    parts.push(spText);
+  }
+
+  // General notes from categorized_notes
+  if (categorized.general.length > 0) {
+    let gnText = '📝 Общие заметки:';
+    categorized.general.forEach(n => { gnText += `\n  • ${n.text}`; });
+    parts.push(gnText);
+  }
+
+  const fullText = parts.join('\n\n─────────────────────\n\n');
     
-  if (!text || text.trim() === '') {
-    return ctx.reply('📓 *Ваш блокнот пока пуст.*\n\nДобавляйте заметки через меню блокнота или отвечайте на пуш-опросы.', { parse_mode: 'Markdown', ...getNotebookMenu() });
+  if (!fullText || fullText.trim() === '') {
+    return ctx.reply('📓 Ваш блокнот пока пуст.\n\nДобавляйте заметки через меню блокнота или отвечайте на пуш-опросы.', getNotebookMenu());
   }
   
-  if (text.length > 4000) {
-    const buffer = Buffer.from(text, 'utf-8');
+  if (fullText.length > 4000) {
+    const buffer = Buffer.from(fullText, 'utf-8');
     await ctx.replyWithDocument({ source: buffer, filename: `notebook_${tgId}.txt` }, {
       caption: '📓 Весь блокнот (отправлен файлом)',
       ...getNotebookMenu()
     });
   } else {
-    await ctx.reply(`📓 *Весь блокнот:*\n\n${text}`, { parse_mode: 'Markdown', ...getNotebookMenu() });
+    await ctx.reply(`📓 Весь блокнот:\n\n${fullText}`, getNotebookMenu());
   }
 });
 
@@ -358,7 +389,7 @@ You MUST respond with a JSON object:
           headers: {
             'Content-Type': 'application/json'
           },
-          timeout: 10000
+          timeout: 15000
         }
       );
 
@@ -399,6 +430,9 @@ bot.on('text', async (ctx) => {
     return;
   }
 
+  // Ensure user is registered
+  await registerUser(tgId, ctx.from.username || ctx.from.first_name || 'Anonymous');
+
   // 1. Check if user has a pending categorized note
   const user = await db.getUser(tgId);
 
@@ -409,14 +443,14 @@ bot.on('text', async (ctx) => {
     if (note.type === 'speaker') {
       await db.addSpeakerNote(tgId, note.name, userInput);
       await ctx.reply(
-        `✅ Заметка по спикеру *${note.name}* сохранена в блокнот!`,
-        { parse_mode: 'Markdown', ...getNotebookMenu() }
+        `✅ Заметка по спикеру «${note.name}» сохранена в блокнот!`,
+        getNotebookMenu()
       );
     } else if (note.type === 'general') {
       await db.addGeneralNote(tgId, userInput);
       await ctx.reply(
         '✅ Общая заметка сохранена в блокнот!',
-        { parse_mode: 'Markdown', ...getNotebookMenu() }
+        getNotebookMenu()
       );
     }
     return;
@@ -425,14 +459,14 @@ bot.on('text', async (ctx) => {
   // 2. Check if user is in push-poll feedback state
   if (!user || !user.pending_session_id) {
     return ctx.reply(
-      `🤖 Чтобы сохранить инсайт в блокнот, пожалуйста, дождитесь пуш-опроса от организаторов.\n\nИспользуйте меню для навигации:`,
+      `📝 Чтобы добавить заметку, используйте кнопку «📓 Мой блокнот».\n\nДля отправки инсайта дождитесь пуш-опроса от организаторов.`,
       getMainMenu()
     );
   }
 
   const sessionId = user.pending_session_id;
 
-  // 2. Fetch active session title
+  // 3. Fetch active session title
   const session = await db.getSession(sessionId);
 
   if (!session) {
@@ -449,37 +483,46 @@ bot.on('text', async (ctx) => {
   await ctx.reply('⏳ Проверяю ваш инсайт с помощью Interviewer-Agent...');
 
   try {
-    // 3. Evaluate participant input with Gemini
+    // 4. Evaluate participant input with Gemini
     const result = await evaluateInsight(userInput, sessionTitle);
 
     if (result.is_valid) {
       const cleanInsight = result.clean_insight;
 
-      // a) Save record to user_notes
+      // a) Save record to user_notes (for analytics)
       await db.addInsight(tgId, sessionId, cleanInsight);
 
-      // b) Append note to user's compiled notebook text
+      // b) Append note to user's compiled notebook text (for nb_all)
       const currentText = await db.getUserNotebook(tgId);
       const appendText = `[Сессия: ${sessionTitle}]\n- ${cleanInsight}`;
       const newText = currentText ? `${currentText}\n\n${appendText}` : appendText;
-
       await db.updateUserNotebook(tgId, newText);
 
       await ctx.reply(
-        `✅ *Инсайт принят и записан в ваш блокнот!*\n\n📝 *Отформатированный инсайт:*\n"${cleanInsight}"\n\n💡 Отправьте ещё инсайт или нажмите кнопку меню для навигации.`,
-        { parse_mode: 'Markdown', ...getMainMenu() }
+        `✅ Инсайт принят и записан в ваш блокнот!\n\n📝 Отформатированный инсайт:\n«${cleanInsight}»\n\n💡 Отправьте ещё инсайт или нажмите кнопку меню для навигации.`,
+        getMainMenu()
       );
 
     } else {
       // Input is rejected: prompt for more detailed response using agent feedback
       await ctx.reply(
-        `❌ *Ваш инсайт не прошел валидацию.*\n\n*Рекомендация ИИ:*\n${result.feedback}\n\nПожалуйста, отправьте более подробный ответ.`,
-        { parse_mode: 'Markdown' }
+        `❌ Ваш инсайт не прошел валидацию.\n\nРекомендация ИИ:\n${result.feedback}\n\nПожалуйста, отправьте более подробный ответ.`
       );
     }
   } catch (error) {
     console.error('Error running Interviewer-Agent:', error.message);
-    await ctx.reply('⚠️ Произошла ошибка при обработке инсайта. Попробуйте сформулировать ответ подробнее и прислать снова.');
+
+    // Fallback: save the insight without AI validation
+    const currentText = await db.getUserNotebook(tgId);
+    const appendText = `[Сессия: ${sessionTitle}]\n- ${userInput}`;
+    const newText = currentText ? `${currentText}\n\n${appendText}` : appendText;
+    await db.updateUserNotebook(tgId, newText);
+    await db.addInsight(tgId, sessionId, userInput);
+
+    await ctx.reply(
+      '⚠️ ИИ-валидация временно недоступна, но ваш инсайт всё равно сохранён в блокнот! ✅\n\nОтправьте ещё один инсайт или используйте меню.',
+      getMainMenu()
+    );
   }
 });
 

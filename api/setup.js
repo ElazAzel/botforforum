@@ -26,7 +26,7 @@ module.exports = async (req, res) => {
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Meta-Harness Bot Setup</title>
+  <title>MBA AlmaU Impact Forum — Setup</title>
   <style>
     body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 60px auto; padding: 20px; background: #0f172a; color: #e2e8f0; }
     .card { background: #1e293b; border-radius: 12px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
@@ -40,7 +40,7 @@ module.exports = async (req, res) => {
 </head>
 <body>
   <div class="card">
-    <h1>🤖 Meta-Harness Bot</h1>
+    <h1>🎓 MBA AlmaU Impact Forum</h1>
     <div class="status ${result.ok ? 'ok' : 'fail'}">
       ${result.ok ? '✅ Вебхук успешно установлен!' : '❌ Ошибка: ' + (result.description || 'Неизвестная ошибка')}
     </div>

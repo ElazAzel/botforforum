@@ -4,10 +4,9 @@ const path = require('path');
 const DB_PATH = path.join(__dirname, '..', 'db.json');
 const BLOB_KEY = 'db.json';
 
-let blobPut, blobGet;
+let blobModule = null;
 if (process.env.BLOB_READ_WRITE_TOKEN) {
-  const m = require('@vercel/blob');
-  blobPut = m.put; blobGet = m.get;
+  blobModule = require('@vercel/blob');
 }
 
 function freshStore() {
@@ -15,48 +14,117 @@ function freshStore() {
 }
 
 let store = freshStore();
-let loaded = false;
-let loadPromise = null;
 
-// On Vercel: async load from blob, sync file fallback for local dev
-if (blobGet) {
-  loadPromise = blobGet(BLOB_KEY).then(b => {
-    if (!b) return;
-    return b.text().then(t => {
-      const p = JSON.parse(t);
-      if (p.users && p.sessions) {
-        Object.keys(p).forEach(k => {
-          if (typeof p[k] === 'object' && !Array.isArray(p[k])) {
-            Object.assign(store[k], p[k]);
-          } else {
-            store[k] = p[k];
-          }
-        });
-      }
+// On Vercel (serverless), we must reload from Blob on EVERY invocation
+// because the in-memory store may be stale or from a cold start.
+// We track whether the store has been loaded for THIS invocation.
+let loadedForThisInvocation = false;
+
+async function loadFromBlob() {
+  if (!blobModule) return false;
+  try {
+    // Use list() to find the blob by prefix, then fetch its content
+    const { blobs } = await blobModule.list({ prefix: BLOB_KEY, limit: 1 });
+    if (!blobs || blobs.length === 0) {
+      console.log('No blob found with key:', BLOB_KEY);
+      return false;
+    }
+    const blobUrl = blobs[0].url;
+    // Fetch the blob content using its URL
+    const response = await fetch(blobUrl);
+    if (!response.ok) {
+      console.warn('Failed to fetch blob:', response.status);
+      return false;
+    }
+    const text = await response.text();
+    const parsed = JSON.parse(text);
+    if (parsed.users && parsed.sessions) {
+      // Reset store to fresh then merge, ensuring all keys exist
+      store = freshStore();
+      Object.keys(parsed).forEach(k => {
+        if (store[k] !== undefined && typeof parsed[k] === 'object' && !Array.isArray(parsed[k])) {
+          Object.assign(store[k], parsed[k]);
+        } else if (parsed[k] !== undefined) {
+          store[k] = parsed[k];
+        }
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('loadFromBlob failed:', err.message);
+    return false;
+  }
+}
+
+async function saveToBlob() {
+  if (!blobModule) return;
+  try {
+    const data = JSON.stringify(store, null, 2);
+    await blobModule.put(BLOB_KEY, data, {
+      contentType: 'application/json',
+      access: 'public',
+      addRandomSuffix: false
     });
-  }).then(() => { loaded = true; }).catch(() => { loaded = true; });
-} else {
+  } catch (err) {
+    console.warn('saveToBlob failed:', err.message);
+  }
+}
+
+// For local dev: sync file read/write
+function loadFromFile() {
   try {
     if (fs.existsSync(DB_PATH)) {
       const d = fs.readFileSync(DB_PATH, 'utf-8');
       const p = JSON.parse(d);
-      if (p.users && p.sessions) store = p;
+      if (p.users && p.sessions) {
+        store = freshStore();
+        Object.keys(p).forEach(k => {
+          if (store[k] !== undefined && typeof p[k] === 'object' && !Array.isArray(p[k])) {
+            Object.assign(store[k], p[k]);
+          } else if (p[k] !== undefined) {
+            store[k] = p[k];
+          }
+        });
+      }
     }
-  } catch (e) {}
-  loaded = true;
-}
-
-async function ensureLoaded() {
-  if (!loaded && loadPromise) await loadPromise;
+  } catch (e) {
+    console.warn('loadFromFile failed:', e.message);
+  }
 }
 
 function saveToFile() {
   try {
     const d = JSON.stringify(store, null, 2);
     fs.writeFileSync(DB_PATH, d, 'utf-8');
-    if (blobPut) blobPut(BLOB_KEY, d, { contentType: 'application/json', access: 'private' }).catch(() => {});
   } catch (err) {
-    console.warn('db save failed:', err.message);
+    console.warn('file save failed:', err.message);
+  }
+}
+
+// Unified save: saves to both file and blob
+async function save() {
+  saveToFile();
+  await saveToBlob();
+}
+
+// Ensure data is loaded before any operation.
+// On Vercel: always reload from Blob to get fresh data (serverless = stateless).
+// Locally: load from file once.
+async function ensureLoaded() {
+  if (blobModule) {
+    // Always reload from blob on each invocation to avoid stale data
+    if (!loadedForThisInvocation) {
+      await loadFromBlob();
+      loadedForThisInvocation = true;
+      // Reset after 5 seconds so next request within same warm instance reloads
+      setTimeout(() => { loadedForThisInvocation = false; }, 5000);
+    }
+  } else {
+    // Local dev: load from file once
+    if (!loadedForThisInvocation) {
+      loadFromFile();
+      loadedForThisInvocation = true;
+    }
   }
 }
 
@@ -77,11 +145,11 @@ async function saveUser(tgId, username) {
       pending_note: null,
       created_at: new Date().toISOString()
     };
-    saveToFile();
+    await save();
   } else {
     if (store.users[key].pending_note === undefined) {
       store.users[key].pending_note = null;
-      saveToFile();
+      await save();
     }
   }
   return store.users[key];
@@ -92,7 +160,7 @@ async function updateUserPendingSession(tgId, sessionId) {
   const key = String(tgId);
   if (store.users[key]) {
     store.users[key].pending_session_id = sessionId;
-    saveToFile();
+    await save();
     return true;
   }
   return false;
@@ -103,7 +171,7 @@ async function updateUserPendingNote(tgId, noteData) {
   const key = String(tgId);
   if (!store.users[key]) return false;
   store.users[key].pending_note = noteData;
-  saveToFile();
+  await save();
   return true;
 }
 
@@ -112,7 +180,7 @@ async function updateAllUsersPendingSession(sessionId) {
   Object.keys(store.users).forEach(id => {
     store.users[id].pending_session_id = sessionId;
   });
-  saveToFile();
+  await save();
 }
 
 async function getActiveSession() {
@@ -149,7 +217,7 @@ async function saveSession(sessionId, title, isActive = false) {
     });
   }
 
-  saveToFile();
+  await save();
   return session;
 }
 
@@ -165,7 +233,7 @@ async function addInsight(tgId, sessionId, rawInsight) {
   };
   if (!store.user_notes[sessionId]) store.user_notes[sessionId] = [];
   store.user_notes[sessionId].push(newNote);
-  saveToFile();
+  await save();
   return newNote;
 }
 
@@ -183,7 +251,7 @@ async function getUserNotebook(tgId) {
 async function updateUserNotebook(tgId, text) {
   await ensureLoaded();
   store.user_notebooks[String(tgId)] = text;
-  saveToFile();
+  await save();
 }
 
 // --- КАТЕГОРИЗИРОВАННЫЕ ЗАМЕТКИ ---
@@ -195,7 +263,7 @@ async function addSpeakerNote(tgId, speakerName, text) {
   store.categorized_notes[key].speakers[speakerName].push({
     text, timestamp: new Date().toISOString()
   });
-  saveToFile();
+  await save();
   return true;
 }
 
@@ -206,7 +274,7 @@ async function addGeneralNote(tgId, text) {
   store.categorized_notes[key].general.push({
     text, timestamp: new Date().toISOString()
   });
-  saveToFile();
+  await save();
   return true;
 }
 
@@ -247,7 +315,7 @@ async function deleteSession(sessionId) {
       store.users[id].pending_session_id = null;
     }
   });
-  saveToFile();
+  await save();
   return existed;
 }
 
