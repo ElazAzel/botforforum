@@ -201,10 +201,11 @@ Response format: JSON object:
    - Speaker/general notes: stored in `categorized_notes` (by user).
    - "Весь блокнот" (`nb_all`): compiles from both `user_notebooks` and `categorized_notes`.
 
-5. **Analytics & Aggregation**:
-   - Organizers can invoke `/api/analytics?action=excel` to download row data.
+5. Analytics & Aggregation:
+   - Organizers can trigger Excel reports and AI trend analysis directly from the Admin Panel Web UI with a single click.
+   - Organizers can also invoke the API endpoint `/api/analytics?action=excel` to download raw data.
    - Organizers can invoke `/api/analytics?action=trends` to run the **Semantic-Analyst-Agent** report.
-   - Both methods send results to the admin's Telegram chat.
+   - Both analytics methods send their results directly to the admin's Telegram chat.
 
 ---
 

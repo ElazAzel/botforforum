@@ -414,6 +414,7 @@
           <h2 id="insight_title" style="margin-bottom:0">Ответы</h2>
           <div style="display:flex; gap:6px; flex-wrap:wrap">
             <button class="btn btn-sm btn-green" onclick="downloadExcel()">📥 Excel</button>
+            <button class="btn btn-sm btn-purple" id="ai_trends_btn" style="width:auto;" onclick="triggerAITrends()">🤖 ИИ-Аналитика</button>
             <button class="btn btn-sm btn-outline" onclick="closeInsights()">✕ Закрыть</button>
           </div>
         </div>
@@ -631,6 +632,44 @@ function closeInsights() {
 function downloadExcel() {
   if (!currentSession) return;
   window.open('/api/admin?action=download_excel&session_id=' + encodeURIComponent(currentSession) + '&admin_password=' + encodeURIComponent(PW), '_blank');
+}
+
+async function triggerAITrends() {
+  if (!currentSession) return;
+  
+  let tgId = localStorage.getItem('admin_tg_id') || '';
+  tgId = prompt('Введите ваш Telegram ID для получения ИИ-отчета (он будет сохранен):', tgId);
+  if (tgId === null) return;
+  
+  tgId = tgId.trim();
+  if (!tgId || isNaN(tgId)) {
+    return alert('Пожалуйста, введите корректный числовой Telegram ID.');
+  }
+  
+  localStorage.setItem('admin_tg_id', tgId);
+  
+  setLoading('ai_trends_btn', true, 'Анализ...');
+  try {
+    const params = new URLSearchParams({
+      action: 'trends',
+      session_id: currentSession,
+      admin_tg_id: tgId,
+      admin_password: PW
+    });
+    
+    const r = await fetch('/api/analytics?' + params);
+    const d = await r.json();
+    
+    if (d.success) {
+      alert('🤖 ИИ-Анализ успешно запущен! Отчет отправлен в ваш Telegram-чат.');
+    } else {
+      alert('❌ Ошибка: ' + (d.error || 'Не удалось запустить анализ'));
+    }
+  } catch (e) {
+    alert('❌ Ошибка соединения: ' + e.message);
+  } finally {
+    setLoading('ai_trends_btn', false, '🤖 ИИ-Аналитика');
+  }
 }
 
 // --- Управление кнопками ---
