@@ -25,6 +25,20 @@ const registerNotebookHandlers = require('./bot/notebook');
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
+// Global middleware to auto-register/update user on every interaction
+bot.use(async (ctx, next) => {
+  if (ctx.from) {
+    const tgId = ctx.from.id;
+    const username = ctx.from.username || ctx.from.first_name || 'Anonymous';
+    try {
+      await registerUser(tgId, username);
+    } catch (e) {
+      console.error('Auto-registration failed:', e.message);
+    }
+  }
+  return await next();
+});
+
 // Register modular handlers
 registerScheduleHandlers(bot);
 registerSpeakerHandlers(bot);

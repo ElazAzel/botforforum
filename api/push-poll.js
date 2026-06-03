@@ -44,11 +44,17 @@ module.exports = async (req, res) => {
     const results = await Promise.allSettled(
       users.map(async (user) => {
         try {
-          await telegram.sendMessage(
-            user.tg_id,
-            `📢 *Опрос по сессии: ${title}*\n\n${pollQuestion}\n\n_Пожалуйста, напишите ваш ответ ответным сообщением._`,
-            { parse_mode: 'Markdown' }
-          );
+          try {
+            await telegram.sendMessage(
+              user.tg_id,
+              `📢 *Опрос по сессии: ${title}*\n\n${pollQuestion}\n\n_Пожалуйста, напишите ваш ответ ответным сообщением._`,
+              { parse_mode: 'Markdown' }
+            );
+          } catch (markdownErr) {
+            console.warn(`Markdown push-poll send failed for user ${user.tg_id}, retrying in plain text:`, markdownErr.message);
+            const plainMsg = `📢 Опрос по сессии: ${title}\n\n${pollQuestion}\n\nПожалуйста, напишите ваш ответ ответным сообщением.`;
+            await telegram.sendMessage(user.tg_id, plainMsg);
+          }
           return { tg_id: user.tg_id, success: true };
         } catch (err) {
           console.error(`Failed to send broadcast to user ${user.tg_id}:`, err.message);

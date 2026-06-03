@@ -91,7 +91,13 @@ You MUST respond with a JSON object:
   }
 }
 
+function escapeMarkdown(text) {
+  if (!text) return '';
+  return text.replace(/([*_[`])/g, '\\$1');
+}
+
 module.exports = {
   registerUser,
-  evaluateInsight
+  evaluateInsight,
+  escapeMarkdown
 };

@@ -52,16 +52,29 @@ module.exports = async (req, res) => {
         return res.json({ success: true, message: 'No users', sent: 0, total: 0 });
       }
       await db.updateAllUsersPendingSession(session_id);
-      let sent = 0;
-      for (const user of users) {
-        try {
-          await telegram.sendMessage(user.tg_id,
-            `📢 *Опрос по сессии: ${title}*\n\n${pollQuestion}\n\n_Напишите ваш ответ._`,
-            { parse_mode: 'Markdown' }
-          );
-          sent++;
-        } catch (e) { console.error('send failed:', user.tg_id, e.message); }
-      }
+      
+      // Parallel sending to avoid serverless execution timeouts
+      const results = await Promise.allSettled(
+        users.map(async (user) => {
+          try {
+            try {
+              await telegram.sendMessage(user.tg_id,
+                `📢 *Опрос по сессии: ${title}*\n\n${pollQuestion}\n\n_Напишите ваш ответ._`,
+                { parse_mode: 'Markdown' }
+              );
+            } catch (markdownErr) {
+              console.warn(`Markdown send failed for user ${user.tg_id}, retrying in plain text:`, markdownErr.message);
+              const plainMsg = `📢 Опрос по сессии: ${title}\n\n${pollQuestion}\n\nНапишите ваш ответ.`;
+              await telegram.sendMessage(user.tg_id, plainMsg);
+            }
+            return true;
+          } catch (e) {
+            console.error('send failed:', user.tg_id, e.message);
+            return false;
+          }
+        })
+      );
+      const sent = results.filter(r => r.status === 'fulfilled' && r.value).length;
       return res.json({ success: true, sent, total: users.length });
 
     } else if (action === 'broadcast') {
@@ -71,18 +84,35 @@ module.exports = async (req, res) => {
       if (!users || users.length === 0) {
         return res.json({ success: true, sent: 0, total: 0 });
       }
-      let sent = 0;
-      for (const user of users) {
-        try {
-          if (image_base64) {
-            const buf = Buffer.from(image_base64, 'base64');
-            await telegram.sendPhoto(user.tg_id, { source: buf, filename: 'image.jpg' }, { caption: message, parse_mode: 'Markdown' });
-          } else {
-            await telegram.sendMessage(user.tg_id, message, { parse_mode: 'Markdown' });
+      
+      // Parallel sending to avoid serverless execution timeouts
+      const results = await Promise.allSettled(
+        users.map(async (user) => {
+          try {
+            if (image_base64) {
+              const buf = Buffer.from(image_base64, 'base64');
+              try {
+                await telegram.sendPhoto(user.tg_id, { source: buf, filename: 'image.jpg' }, { caption: message, parse_mode: 'Markdown' });
+              } catch (markdownErr) {
+                console.warn(`Broadcast photo Markdown send failed for user ${user.tg_id}, retrying in plain text:`, markdownErr.message);
+                await telegram.sendPhoto(user.tg_id, { source: buf, filename: 'image.jpg' }, { caption: message });
+              }
+            } else {
+              try {
+                await telegram.sendMessage(user.tg_id, message, { parse_mode: 'Markdown' });
+              } catch (markdownErr) {
+                console.warn(`Broadcast message Markdown send failed for user ${user.tg_id}, retrying in plain text:`, markdownErr.message);
+                await telegram.sendMessage(user.tg_id, message);
+              }
+            }
+            return true;
+          } catch (e) {
+            console.error('broadcast failed:', user.tg_id, e.message);
+            return false;
           }
-          sent++;
-        } catch (e) { console.error('broadcast failed:', user.tg_id, e.message); }
-      }
+        })
+      );
+      const sent = results.filter(r => r.status === 'fulfilled' && r.value).length;
       return res.json({ success: true, sent, total: users.length });
 
     } else if (action === 'delete_session') {
