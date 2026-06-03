@@ -4,7 +4,8 @@ const axios = require('axios');
 const db = require('./db');
 
 const {
-  PROGRAM_INTRO
+  PROGRAM_INTRO,
+  SPEAKER_NAMES
 } = require('./bot/config');
 
 const {
@@ -116,6 +117,25 @@ bot.action(/^menu_open_(.+)$/, async (ctx) => {
   }
 });
 
+// Helper to save user insight to their categorized notes (under speaker or general notes)
+async function saveUserInsightAsNote(tgId, sessionTitle, text) {
+  let matchedSpeaker = null;
+  if (SPEAKER_NAMES && Array.isArray(SPEAKER_NAMES)) {
+    for (const name of SPEAKER_NAMES) {
+      if (sessionTitle.toLowerCase().includes(name.toLowerCase())) {
+        matchedSpeaker = name;
+        break;
+      }
+    }
+  }
+
+  if (matchedSpeaker) {
+    await db.addSpeakerNote(tgId, matchedSpeaker, `[Инсайт] ${text}`);
+  } else {
+    await db.addGeneralNote(tgId, `[Инсайт с сессии: ${sessionTitle}] ${text}`);
+  }
+}
+
 // User text response intercepts: acts as the entry point for feedback loops
 bot.on('text', async (ctx) => {
   const tgId = ctx.from.id;
@@ -185,11 +205,8 @@ bot.on('text', async (ctx) => {
       // a) Save record to user_notes (for analytics)
       await db.addInsight(tgId, sessionId, cleanInsight);
 
-      // b) Append note to user's compiled notebook text (for nb_all)
-      const currentText = await db.getUserNotebook(tgId);
-      const appendText = `[Сессия: ${sessionTitle}]\n- ${cleanInsight}`;
-      const newText = currentText ? `${currentText}\n\n${appendText}` : appendText;
-      await db.updateUserNotebook(tgId, newText);
+      // b) Save to user's categorized notes (for notebook grouping and stats)
+      await saveUserInsightAsNote(tgId, sessionTitle, cleanInsight);
 
       await ctx.reply(
         `✅ Инсайт принят и записан в ваш блокнот!\n\n📝 Отформатированный инсайт:\n«${cleanInsight}»\n\n💡 Отправьте ещё инсайт или нажмите кнопку меню для навигации.`,
@@ -206,11 +223,8 @@ bot.on('text', async (ctx) => {
     console.error('Error running Interviewer-Agent:', error.message);
 
     // Fallback: save the insight without AI validation
-    const currentText = await db.getUserNotebook(tgId);
-    const appendText = `[Сессия: ${sessionTitle}]\n- ${userInput}`;
-    const newText = currentText ? `${currentText}\n\n${appendText}` : appendText;
-    await db.updateUserNotebook(tgId, newText);
     await db.addInsight(tgId, sessionId, userInput);
+    await saveUserInsightAsNote(tgId, sessionTitle, userInput);
 
     await ctx.reply(
       '⚠️ ИИ-валидация временно недоступна, но ваш инсайт всё равно сохранён в блокнот! ✅\n\nОтправьте ещё один инсайт или используйте меню.',
