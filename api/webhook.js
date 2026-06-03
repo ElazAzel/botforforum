@@ -219,32 +219,8 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// Auto-setup webhook on Vercel — avoids manual /api/setup after each deploy
-let lastWebhookUrl = '';
-
-async function ensureWebhook(req) {
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const currentUrl = `${proto}://${host}/api/webhook`;
-  if (currentUrl === lastWebhookUrl) return;
-  try {
-    const secretToken = process.env.TELEGRAM_SECRET_TOKEN || 'mba_almau_forum_secret_token_2026';
-    const r = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`, { 
-      url: currentUrl,
-      secret_token: secretToken
-    });
-    if (r.data?.ok) {
-      lastWebhookUrl = currentUrl;
-      console.log('Webhook set to', currentUrl);
-    }
-  } catch (e) {
-    console.warn('Webhook auto-setup failed:', e.message);
-  }
-}
-
 // Vercel Serverless Function entry point
 module.exports = async (req, res) => {
-  await ensureWebhook(req);
 
   const secretToken = process.env.TELEGRAM_SECRET_TOKEN || 'mba_almau_forum_secret_token_2026';
   const incomingToken = req.headers['x-telegram-bot-api-secret-token'];
