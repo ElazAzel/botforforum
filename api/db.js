@@ -120,7 +120,7 @@ async function loadFromBlob() {
     const { blobs } = await blobModule.list({ prefix: BLOB_KEY, limit: 1 });
     if (!blobs || blobs.length === 0) {
       console.log('No blob found with key:', BLOB_KEY);
-      return false;
+      return true; // Successfully initialized empty (first run)
     }
     const blobUrl = blobs[0].url;
     const response = await fetch(blobUrl, {
@@ -129,12 +129,11 @@ async function loadFromBlob() {
       }
     });
     if (!response.ok) {
-      console.warn('Failed to fetch blob:', response.status);
-      return false;
+      throw new Error(`Failed to fetch blob: ${response.status} ${response.statusText}`);
     }
     const text = await response.text();
     const parsed = JSON.parse(text);
-    if (parsed.users && parsed.sessions) {
+    if (parsed && typeof parsed === 'object') {
       store = freshStore();
       Object.keys(parsed).forEach(k => {
         if (store[k] !== undefined && typeof parsed[k] === 'object' && !Array.isArray(parsed[k])) {
@@ -147,8 +146,8 @@ async function loadFromBlob() {
     }
     return true;
   } catch (err) {
-    console.warn('loadFromBlob failed:', err.message);
-    return false;
+    console.error('loadFromBlob failed:', err.message);
+    throw err; // Propagate error so ensureLoaded() halts
   }
 }
 
@@ -158,7 +157,7 @@ function loadFromFile() {
     if (fs.existsSync(DB_PATH)) {
       const d = fs.readFileSync(DB_PATH, 'utf-8');
       const p = JSON.parse(d);
-      if (p.users && p.sessions) {
+      if (p && typeof p === 'object') {
         store = freshStore();
         Object.keys(p).forEach(k => {
           if (store[k] !== undefined && typeof p[k] === 'object' && !Array.isArray(p[k])) {
@@ -209,6 +208,8 @@ async function save() {
             } else {
               store.version = loadedVersion + 1;
             }
+          } else {
+            throw new Error(`Failed to fetch remote blob: ${response.status} ${response.statusText}`);
           }
         } else {
           store.version = 1;
@@ -228,7 +229,7 @@ async function save() {
         retries--;
         console.warn(`Vercel Blob save attempt failed (retries left: ${retries}):`, err.message);
         if (retries === 0) {
-          saveToFile();
+          throw err; // Propagate the error to prevent silent data loss or inconsistent state
         } else {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
