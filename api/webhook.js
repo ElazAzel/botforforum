@@ -158,12 +158,28 @@ bot.on('text', async (ctx) => {
 
     if (note.type === 'speaker') {
       await db.addSpeakerNote(tgId, note.name, userInput);
+      
+      // Save manual speaker note as admin insight under virtual session
+      const exists = await db.getSession('manual_speaker');
+      if (!exists) {
+        await db.saveSession('manual_speaker', 'Ручные заметки по спикерам', false);
+      }
+      await db.addInsight(tgId, 'manual_speaker', `[Спикер: ${note.name}] ${userInput}`);
+
       await ctx.reply(
         `✅ Заметка по спикеру «${note.name}» сохранена в блокнот!`,
         await getNotebookMenu(tgId)
       );
     } else if (note.type === 'general') {
       await db.addGeneralNote(tgId, userInput);
+      
+      // Save manual general note as admin insight under virtual session
+      const exists = await db.getSession('manual_general');
+      if (!exists) {
+        await db.saveSession('manual_general', 'Ручные общие заметки', false);
+      }
+      await db.addInsight(tgId, 'manual_general', userInput);
+
       await ctx.reply(
         '✅ Общая заметка сохранена в блокнот!',
         await getNotebookMenu(tgId)
