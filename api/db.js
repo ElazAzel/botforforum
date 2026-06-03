@@ -123,7 +123,11 @@ async function loadFromBlob() {
       return false;
     }
     const blobUrl = blobs[0].url;
-    const response = await fetch(blobUrl);
+    const response = await fetch(blobUrl, {
+      headers: {
+        Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`
+      }
+    });
     if (!response.ok) {
       console.warn('Failed to fetch blob:', response.status);
       return false;
@@ -189,7 +193,11 @@ async function save() {
         const { blobs } = await blobModule.list({ prefix: BLOB_KEY, limit: 1 });
         if (blobs && blobs.length > 0) {
           const blobUrl = blobs[0].url;
-          const response = await fetch(blobUrl);
+          const response = await fetch(blobUrl, {
+            headers: {
+              Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`
+            }
+          });
           if (response.ok) {
             const text = await response.text();
             const remoteStore = JSON.parse(text);
@@ -210,7 +218,7 @@ async function save() {
         const data = JSON.stringify(store, null, 2);
         await blobModule.put(BLOB_KEY, data, {
           contentType: 'application/json',
-          access: 'public',
+          access: 'private',
           addRandomSuffix: false
         });
         
